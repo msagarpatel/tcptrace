@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,10 +26,8 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.23 1997/09/05 16:02:42 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.54 1998/08/14 19:22:34 sdo Exp $";
 
-
-#include "config.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +48,7 @@ static char const rcsid_tcptrace[] =
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <netdb.h>
 #include <ctype.h>
 #include <signal.h>
@@ -57,9 +56,26 @@ static char const rcsid_tcptrace[] =
 #include <stdarg.h>
 #include <stdlib.h>
 
-/* type for plotting into a file */
+/* IPv6 support */
+#include "ipv6.h"
+
+/* we want LONG LONG in some places */
+#if SIZEOF_UNSIGNED_LONG_LONG_INT >= 8
+#define HAVE_LONG_LONG
+typedef unsigned long long int u_llong;
+typedef long long int llong;
+#else /* LONG LONG */
+typedef unsigned long int u_llong;
+typedef long int llong;
+#endif /* LONG LONG */
+
+/* plotter information */
 typedef int PLOTTER;
 #define NO_PLOTTER -1
+#define NCOLORS 8
+extern char *ColorNames[NCOLORS];
+/* {"green", "red", "blue", "yellow", "purple", "orange", "magenta", "pink"}; */
+
 
 
 /* type for a TCP sequence number, ACK, FIN, or SYN */
@@ -75,7 +91,15 @@ typedef u_char quadnum;  /* 1,2,3,4 */
 typedef u_short portnum;
 
 /* type for an IP address */
-typedef struct in_addr ipaddr;
+/* IP address can be either IPv4 or IPv6 */
+typedef struct ipaddr {
+    u_char addr_vers;	/* 4 or 6 */
+    union {
+	struct in_addr   ip4;
+	struct in6_addr  ip6;
+    } un;
+} ipaddr;
+
 
 /* type for a timestamp */
 typedef struct timeval timeval;
@@ -89,13 +113,26 @@ typedef u_char Bool;
 /* type for an internal file pointer */
 typedef struct mfile MFILE;
 
+/* file name information */
+extern char **filenames;	/* all the files on the cmd line */
+extern char *cur_filename;	/* the current file */
 
+/* first and last packet timestamp */
+extern timeval first_packet;
+extern timeval last_packet;
+
+/* counters */
+extern u_long tcp_trace_count;
+extern u_long udp_trace_count;
+
+
+#ifdef OLD
 /* test 2 IP addresses for equality */
 #define IP_SAMEADDR(addr1,addr2) (((addr1).s_addr) == ((addr2).s_addr))
 
 /* copy IP addresses */
 #define IP_COPYADDR(toaddr,fromaddr) ((toaddr).s_addr = (fromaddr).s_addr)
-
+#endif
 
 typedef struct segment {
     seqnum	seq_firstbyte;	/* seqnumber of first byte */
@@ -140,25 +177,38 @@ typedef struct tcb {
     u_char	window_scale;
 
     /* statistics added */
-    u_long	data_bytes;
-    u_long	data_pkts;
-    u_long	rexmit_bytes;
-    u_long	rexmit_pkts;
-    u_long	ack_pkts;
+    u_llong	data_bytes;
+    u_llong	data_pkts;
+    u_llong	data_pkts_push;
+    u_llong	rexmit_bytes;
+    u_llong	rexmit_pkts;
+    u_llong	ack_pkts;
+    u_llong	pureack_pkts;	/* mallman - pure acks, no data */
     u_long	win_max;
     u_long	win_min;
     u_long	win_tot;
     u_long	win_zero_ct;
     u_long	min_seq;
     u_long	max_seq;
-    u_long	packets;
+    u_llong	packets;
     u_char	syn_count;
     u_char	fin_count;
     u_char	reset_count;  /* resets SENT */
     u_long	min_seg_size;
     u_long	max_seg_size;
-    u_long	out_order_pkts;	/* out of order packets */
-    u_long	sacks_sent;	/* sacks returned */
+    u_llong	out_order_pkts;	/* out of order packets */
+    u_llong	sacks_sent;	/* sacks returned */
+    u_long	ipv6_segments;	/* how many segments were ipv6? */
+
+    /* hardware duplicate detection */
+#define SEGS_TO_REMEMBER 8
+    struct str_hardware_dups {
+	seqnum	hwdup_seq;	/* sequence number */
+	u_short	hwdup_id;	/* IP ID */
+	u_long	hwdup_packnum; /* packet number */
+    } hardware_dups[SEGS_TO_REMEMBER];
+    u_long num_hardware_dups;
+    u_char hardware_dups_ix;
 
     /* added for initial window stats (for Mallman) */
     u_long	initialwin_bytes;	/* initial window (in bytes) */
@@ -171,6 +221,7 @@ typedef struct tcb {
     u_long	cwin_tot;
 
     /* RTT stats for singly-transmitted segments */
+    double	rtt_last;	/* RTT as of last good ACK (microseconds) */
     u_long	rtt_min;
     u_long	rtt_max;
     double	rtt_sum;	/* for averages */
@@ -183,10 +234,10 @@ typedef struct tcb {
     double	rtt_sum2_last;	/* sum of squares, for stdev */
     u_long	rtt_count_last;	/* from last transmission, for averages */
     /* ACK Counters */
-    u_long	rtt_amback;	/* ambiguous ACK */
-    u_long	rtt_cumack;	/* segments only cumulativly ACKed */
-    u_long	rtt_unkack;	/* unknown ACKs  ??? */
-    u_long	rtt_dupack;	/* duplicate ACKs */
+    u_llong	rtt_amback;	/* ambiguous ACK */
+    u_llong	rtt_cumack;	/* segments only cumulativly ACKed */
+    u_llong	rtt_unkack;	/* unknown ACKs  ??? */
+    u_llong	rtt_dupack;	/* duplicate ACKs */
     /* retransmission information */
     seqspace    *ss;		/* the sequence space*/
     u_long	retr_max;	/* maximum retransmissions ct */
@@ -205,7 +256,10 @@ typedef struct tcb {
     PLOTTER	thru_plotter;	/* throughput data dump file */
     timeval	thru_lasttime;	/* time of previous segment */
 
-    
+    /* data transfer time stamps - mallman */
+    timeval	first_data_time;
+    timeval	last_data_time;
+
     /* Time Sequence Graph info for this one */
     PLOTTER	tsg_plotter;
     char	*tsg_plotfile;
@@ -214,10 +268,11 @@ typedef struct tcb {
     MFILE	*rtt_dump_file;
 
     /* Extracted stream contents */
-    MFILE	*extracted_contents_file;
-    u_long	trunc_bytes;	/* data bytes not see due to trace file truncation */
-    u_long	trunc_segs;	/* segments with trunc'd bytes */
-    u_long	extr_lastseq;	/* last sequence number we stored */
+    MFILE	*extr_contents_file;
+    u_llong	trunc_bytes;	/* data bytes not see due to trace file truncation */
+    u_llong	trunc_segs;	/* segments with trunc'd bytes */
+    seqnum	extr_lastseq;	/* last sequence number we stored */
+    seqnum	extr_initseq;	/* initial sequence number (same as SYN unless we missed it) */
 
     /* RTT Graph info for this one */
     PLOTTER	rtt_plotter;
@@ -250,14 +305,26 @@ struct stcp_pair {
     /* endpoint identification */
     tcp_pair_addrblock	addr_pair;
 
-    /* connection information */
+    /* connection naming information */
+    char		*a_hostname;
+    char		*b_hostname;
+    char		*a_portname;
+    char		*b_portname;
     char		*a_endpoint;
     char		*b_endpoint;
+
+    /* connection information */
     timeval		first_time;
     timeval		last_time;
-    u_long		packets;
+    u_llong		packets;
     tcb			a2b;
     tcb			b2a;
+
+    /* module-specific structures, if requested */
+    void		**pmod_info;
+
+    /* which file this connection is from */
+    char		*filename;
 
     /* linked list of usage */
     struct stcp_pair *next;
@@ -269,6 +336,61 @@ typedef struct tcphdr tcphdr;
 
 extern int num_tcp_pairs;	/* how many pairs are in use */
 extern tcp_pair **ttp;		/* array of pointers to allocated pairs */
+
+
+/* minimal support for UDP "connections" */
+typedef struct ucb {
+    /* parent pointer */
+    struct sudp_pair *pup;
+    struct ucb	*ptwin;
+
+    /* statistics added */
+    u_llong	data_bytes;
+    u_llong	packets;
+    u_long	min_dg_size;
+    u_long	max_dg_size;
+
+    /* host name letter(s) */
+    char	*host_letter;
+} ucb;
+
+
+
+typedef tcp_pair_addrblock udp_pair_addrblock;
+struct sudp_pair {
+    /* endpoint identification */
+    udp_pair_addrblock	addr_pair;
+
+    /* connection naming information */
+    char		*a_hostname;
+    char		*b_hostname;
+    char		*a_portname;
+    char		*b_portname;
+    char		*a_endpoint;
+    char		*b_endpoint;
+
+    /* connection information */
+    timeval		first_time;
+    timeval		last_time;
+    u_llong		packets;
+    ucb			a2b;
+    ucb			b2a;
+
+    /* module-specific structures, if requested */
+    void		**pmod_info;
+
+    /* which file this connection is from */
+    char		*filename;
+
+    /* linked list of usage */
+    struct sudp_pair *next;
+};
+typedef struct sudp_pair udp_pair;
+typedef struct udphdr udphdr;
+
+
+extern int num_udp_pairs;	/* how many pairs are in use */
+extern udp_pair **utp;		/* array of pointers to allocated pairs */
 
 
 /* option flags */
@@ -283,27 +405,40 @@ extern Bool nonames;
 extern Bool print_rtt;
 extern Bool print_cwin;
 extern Bool printbrief;
+extern Bool printsuppress;
 extern Bool printem;
+extern Bool printallofem;
 extern Bool printticks;
-extern Bool printtrunc;
+extern Bool warn_printtrunc;
+extern Bool warn_printbadmbz;
+extern Bool warn_printhwdups;
 extern Bool show_out_order;
 extern Bool show_rexmit;
 extern Bool show_zero_window;
 extern Bool use_short_names;
 extern Bool save_tcp_data;
+extern Bool graph_time_zero;
+extern Bool graph_seq_zero;
+extern Bool graph_zero_len_pkts;
+extern Bool plot_tput_instant;
+extern Bool filter_output;
+extern Bool do_udp;
 extern int debug;
 extern int thru_interval;
-extern int pnum;
+extern u_long pnum;
 
-extern int ctrunc;
+extern u_long ctrunc;
 extern timeval current_time;
+extern char *output_filename;
 
 
 #define MAX_NAME 20
 
+
+
 /* external routine decls */
 double sqrt(double x);
-char *ether_ntoa();
+char *ether_ntoa(struct ether_addr *e);
 void free(void *);
 int finite(double);
 
@@ -321,6 +456,7 @@ void plotter_uarrow(PLOTTER, timeval, u_long);
 void plotter_tick(PLOTTER, timeval, u_long, char);
 void plotter_text(PLOTTER, timeval, u_long, char *, char  *);
 void plotter_temp_color(PLOTTER, char *color);
+void plotter_ltick(PLOTTER, timeval, u_long);
 void plotter_rtick(PLOTTER, timeval, u_long);
 void plotter_rarrow(PLOTTER, timeval, u_long);
 void plotter_plus(PLOTTER, timeval, u_long);
@@ -337,19 +473,25 @@ void plotter_darrow(PLOTTER, timeval, u_long);
 void plotter_box(PLOTTER, timeval, u_long);
 void plotter_arrow(PLOTTER, timeval, u_long, char);
 void plot_init(void);
-tcp_pair *dotrace(struct ip *, void *plast);
+tcp_pair *dotrace(struct ip *, struct tcphdr *ptcp, void *plast);
 void PrintRawData(char *label, void *pfirst, void *plast);
+void PrintRawDataHex(char *label, void *pfirst, void *plast);
 void PrintTrace(tcp_pair *);
+void UDPPrintTrace(udp_pair *);
 void PrintBrief(tcp_pair *);
+void UDPPrintBrief(udp_pair *);
 void OnlyConn(int);
 void IgnoreConn(int);
 double elapsed(timeval, timeval);
+char *elapsed2str(double etime);
 int ConnReset(tcp_pair *);
 int ConnComplete(tcp_pair *);
 char *ts2ascii(timeval *);
+char *ts2ascii_date(timeval *);
 char *ServiceName(portnum);
 char *HostName(ipaddr);
 char *HostLetter(u_int);
+char *NextHostLetter(void);
 char *EndpointName(ipaddr,portnum);
 PLOTTER new_plotter(tcb *plast, char *filename, char *title,
 		    char *xlabel, char *ylabel, char *suffix);
@@ -372,7 +514,25 @@ FILE *CompOpenFile(char *filename);
 void CompCloseFile(char *filename);
 void CompFormats(void);
 int CompIsCompressed(void);
+Bool FileIsStdin(char *filename);
+struct tcb *ptp2ptcb(tcp_pair *ptp, struct ip *pip, struct tcphdr *ptcp);
+void IP_COPYADDR (ipaddr *toaddr, ipaddr fromaddr);
+int IP_SAMEADDR (ipaddr addr1, ipaddr addr2);
+void PcapSavePacket(char *filename, struct ip *pip, void *plast);
+void StringToArgv(char *buf, int *pargc, char ***pargv);
+void CopyAddr(tcp_pair_addrblock *, struct ip *pip,portnum,portnum);
+int WhichDir(tcp_pair_addrblock *, tcp_pair_addrblock *);
+int SameConn(tcp_pair_addrblock *, tcp_pair_addrblock *, int *);
 
+/* UDP support routines */
+void udptrace_init(void);
+void udptrace_done(void);
+udp_pair *udpdotrace(struct ip *pip, struct udphdr *pudp, void *plast);
+
+/* filter routines */
+void HelpFilter(void);
+void ParseFilter(char *expr);
+Bool PassesFilter(tcp_pair *ptp);
 
 /* TCP flags macros */
 #define SYN_SET(ptcp)((ptcp)->th_flags & TH_SYN)
@@ -381,6 +541,8 @@ int CompIsCompressed(void);
 #define RESET_SET(ptcp)((ptcp)->th_flags & TH_RST)
 #define PUSH_SET(ptcp)((ptcp)->th_flags & TH_PUSH)
 #define URGENT_SET(ptcp)((ptcp)->th_flags & TH_URG)
+#define FLAG6_SET(ptcp)((ptcp)->th_flags & 0x40)
+#define FLAG7_SET(ptcp)((ptcp)->th_flags & 0x80)
 
 
 /* connection directions */
@@ -429,18 +591,54 @@ typedef struct sack_block {
     seqnum	sack_right;	/* right edge */
 } sack_block;
 
+#define MAX_UNKNOWN 16
+typedef struct opt_unknown {
+    u_char	unkn_opt;
+    u_char	unkn_len;
+} opt_unknown;
+
 /* RFC 1323 TCP options (not usually in tcp.h yet) */
 #define	TCPOPT_WS	3	/* window scaling */
 #define	TCPOPT_TS	8	/* timestamp */
+
+/* other options... */
+#define	TCPOPT_ECHO		6	/* echo (rfc1072) */
+#define	TCPOPT_ECHOREPLY	7	/* echo (rfc1072) */
+#define TCPOPT_TIMESTAMP	8	/* timestamps (rfc1323) */
+#define TCPOPT_CC		11	/* T/TCP CC options (rfc1644) */
+#define TCPOPT_CCNEW		12	/* T/TCP CC options (rfc1644) */
+#define TCPOPT_CCECHO		13	/* T/TCP CC options (rfc1644) */
+
+/* some compilers seem to want to make "char" unsigned by default, */
+/* which is breaking stuff.  Rather than introduce (more) ugly */
+/* machine dependencies, I'm going to FORCE some chars to be */
+/* signed... */
+typedef signed char s_char;
+
 struct tcp_options {
     short	mss;		/* maximum segment size 	*/
-    char	ws;		/* window scale (1323) 		*/
+    s_char	ws;		/* window scale (1323) 		*/
     long	tsval;		/* Time Stamp Val (1323)	*/
     long	tsecr;		/* Time Stamp Echo Reply (1323)	*/
 
     Bool	sack_req;	/* sacks requested 		*/
-    char	sack_count;	/* sack count in this packet */
+    s_char	sack_count;	/* sack count in this packet */
     sack_block	sacks[MAX_SACKS]; /* sack blocks */
+
+    /* echo request and reply */
+    /* assume that value of -1 means unused  (?) */
+    u_long	echo_req;
+    u_long	echo_repl;
+
+    /* T/TCP stuff */
+    /* assume that value of -1 means unused  (?) */
+    u_long	cc;
+    u_long	ccnew;
+    u_long	ccecho;
+
+    /* record the stuff we don't understand, too */
+    char	unknown_count;	/* number of unknown options */
+    opt_unknown	unknowns[MAX_UNKNOWN]; /* unknown options */
 };
 
 
@@ -455,6 +653,63 @@ struct tcp_options {
 #define THROUGHPUT_FILE_EXTENSION	"_tput.xpl"
 #define CONTENTS_FILE_EXTENSION		"_contents.dat"
 
+/* name of file to store filtered output into */
+#define PASS_FILTER_FILENAME		"PF"
+
+/* name of the resource file */
+#define TCPTRACE_RC_FILE ".tcptracerc"
+
+/* name of the argument envariable */
+#define TCPTRACE_ENVARIABLE "TCPTRACEOPTS"
+
+/* packet-reading options... */
+/* the type for a packet reading routine */
+typedef int pread_f(struct timeval *, int *, int *, void **,
+		   int *, struct ip **, void **);
+
+/* give the prototypes for the is_GLORP() routines supported */
+#ifdef GROK_SNOOP
+	pread_f *is_snoop(void);
+#endif /* GROK_SNOOP */
+#ifdef GROK_NETM
+	pread_f *is_netm(void);
+#endif /* GROK_NETM */
+#ifdef GROK_TCPDUMP
+	pread_f *is_tcpdump(void);
+#endif /* GROK_TCPDUMP */
+#ifdef GROK_ETHERPEEK
+	pread_f *is_EP(void);
+#endif /* GROK_ETHERPEEK */
+
+
+/* I've had problems with the memcpy function that gcc stuffs into the program
+   and alignment problems.  This should fix it! */
+void *MemCpy(void *p1, void *p2, size_t n); /* in tcptrace.c */
+#define memcpy(p1,p2,n) MemCpy(p1,p2,n);
+
+
+/*
+ * Macros to simplify access to IPv4/IPv6 header fields
+ */
+#define PIP_VERS(pip) (((struct ip *)(pip))->ip_v)
+#define PIP_ISV6(pip) (PIP_VERS(pip) == 6)
+#define PIP_ISV4(pip) (PIP_VERS(pip) == 4)
+#define PIP_V6(pip) ((struct ipv6 *)(pip))
+#define PIP_V4(pip) ((struct ip *)(pip))
+#define PIP_EITHERFIELD(pip,fld4,fld6) \
+   (PIP_ISV4(pip)?(PIP_V4(pip)->fld4):(PIP_V6(pip)->fld6))
+#define PIP_LEN(pip) (PIP_EITHERFIELD(pip,ip_len,ip6_lngth))
+
+/*
+ * Macros to simplify access to IPv4/IPv6 addresses
+ */
+#define ADDR_VERSION(paddr) ((paddr)->addr_vers)
+#define ADDR_ISV4(paddr) (ADDR_VERSION((paddr)) == 4)
+#define ADDR_ISV6(paddr) (ADDR_VERSION((paddr)) == 6)
+struct ipaddr *IPV4ADDR2ADDR(struct in_addr *addr4);    
+struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);    
+
+
 
 /*
  * fixes for various systems that aren't exactly like Solaris
@@ -466,4 +721,3 @@ struct tcp_options {
 #ifndef ETHERTYPE_REVARP
 #define ETHERTYPE_REVARP        0x8035
 #endif /* ETHERTYPE_REVARP */
-

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/mfiles.c,v 3.6 1997/09/05 19:18:53 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/mfiles.c,v 3.9 1998/03/05 01:17:14 sdo Exp $";
 
 
 /* 
@@ -197,6 +197,10 @@ Mfclose(
     MFILE *pmf)
 {
     int ret;
+
+    if (debug>1)
+	fprintf(stderr,"Mfclose: called for file '%s'\n", pmf->fname);
+	
     Mcheck(pmf);
     ret=fclose(pmf->stream);
     pmf->stream = NULL;

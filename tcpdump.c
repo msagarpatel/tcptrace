@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,8 +38,7 @@
 
 
 /* external ref, in case missing in older version */
-extern int pcap_offline_read();
-
+extern int pcap_offline_read(void *, int, pcap_handler, u_char *);
 
 /* global pointer, the pcap info header */
 static pcap_t *pcap;
@@ -48,7 +47,7 @@ static pcap_t *pcap;
 /* Interaction with pcap */
 static struct ether_header eth_header;
 #define EH_SIZE sizeof(struct ether_header)
-static int ip_buf[IP_MAXPACKET/sizeof(int)];
+static int *ip_buf;  /* [IP_MAXPACKET/sizeof(int)] */
 static struct pcap_pkthdr *callback_phdr;
 static void *callback_plast;
 
@@ -96,8 +95,14 @@ static int callback(
 	memcpy((char *)ip_buf,buf+offset,iplen);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
+      case DLT_RAW:
+	/* raw IP */
+	offset = 0;
+	memcpy((char *)ip_buf,buf+offset,iplen);
+	callback_plast = ip_buf+iplen-offset-1;
+	break;
       default:
-	fprintf(stderr,"Don't understand packet format (%d)\n", type);
+	fprintf(stderr,"Don't understand link-level format (%d)\n", type);
 	exit(1);
     }
 
@@ -119,7 +124,7 @@ pread_tcpdump(
     int ret;
 
     while (1) {
-	if ((ret = pcap_offline_read(pcap,1,callback,0)) != 1) {
+	if ((ret = pcap_offline_read(pcap,1,(pcap_handler)callback,0)) != 1) {
 	    /* prob EOF */
 
 	    if (ret == -1) {
@@ -143,15 +148,11 @@ pread_tcpdump(
 	*plen      = callback_phdr->len;
 	*ptlen     = callback_phdr->caplen;
 
-	/* if it's not TCP/IP, then skip it */
-	if ((ntohs(eth_header.ether_type) != ETHERTYPE_IP) ||
-	    ((*ppip)->ip_p != IPPROTO_TCP)) {
-	    if (debug > 2) {
-		if (ntohs(eth_header.ether_type) != ETHERTYPE_IP)
-		    fprintf(stderr,"pread_tcpdump: not an IP packet\n");
-		if ((*ppip)->ip_p != IPPROTO_TCP)
-		    fprintf(stderr,"pread_tcpdump: not a TCP packet\n");
-	    }
+	/* if it's not IP, then skip it */
+	if ((ntohs(eth_header.ether_type) != ETHERTYPE_IP) &&
+	    (ntohs(eth_header.ether_type) != ETHERTYPE_IPV6)) {
+	    if (debug > 2)
+		fprintf(stderr,"pread_tcpdump: not an IP packet\n");
 	    continue;
 	}
 
@@ -160,7 +161,7 @@ pread_tcpdump(
 }
 
 
-int (*is_tcpdump(void))()
+pread_f *is_tcpdump(void)
 {
     char errbuf[100];
     char *physname = "<unknown>";
@@ -178,7 +179,7 @@ int (*is_tcpdump(void))()
 	printf("Using 'pcap' version of tcpdump\n");
 
     /* check the phys type (pretend everything is ethernet) */
-    memset(&eth_header,EH_SIZE,0);
+    memset(&eth_header,0,EH_SIZE);
     switch (type = pcap_datalink(pcap)) {
       case DLT_EN10MB:
 	/* OK, we understand this one */
@@ -196,9 +197,13 @@ int (*is_tcpdump(void))()
 	eth_header.ether_type = htons(ETHERTYPE_IP);
 	physname = "NULL";
 	break;
+      case DLT_RAW:
+	eth_header.ether_type = htons(ETHERTYPE_IP);
+	physname = "RAW_IP";
+	break;
       default:
 	if (debug)
-	    fprintf(stderr,"is_tcpdump: Don't understand packet format (%d)\n", type);
+	    fprintf(stderr,"is_tcpdump: I think it's tcpdump, but I don't understand link format (%d)\n", type);
 	rewind(stdin);
 	return(NULL);
     }
@@ -207,8 +212,86 @@ int (*is_tcpdump(void))()
 	fprintf(stderr,"Tcpdump format, physical type is %d (%s)\n",
 		type, physname);
 
+    /* set up some stuff */
+    ip_buf = MallocZ(IP_MAXPACKET);
+
 
     return(pread_tcpdump);
+}
+
+
+/* support for writing a new pcap file */
+
+void
+PcapSavePacket(
+    char *filename,
+    struct ip *pip,
+    void *plast)
+{
+    static FILE *f_savefile = NULL;
+    struct pcap_pkthdr phdr;
+    int wlen;
+
+    if (f_savefile == NULL) {
+	struct pcap_file_header fhdr;
+
+	/* try to open the file */
+	if ((f_savefile = fopen(filename, "w")) == NULL) {
+	    perror(filename);
+	    exit(-1);
+	}
+	
+	/* make up the header info it wants */
+	/* this comes from version 2.4, no pcap routine handy :-(  */
+	fhdr.magic = TCPDUMP_MAGIC;
+	fhdr.version_major = PCAP_VERSION_MAJOR;
+	fhdr.version_minor = PCAP_VERSION_MINOR;
+
+	fhdr.thiszone = 0;	/* don't have this info, just make it up */
+	fhdr.snaplen = 1000000;	/* don't have this info, just make it up */
+	fhdr.linktype = DLT_EN10MB; /* always Ethernet (10Mb) */
+	fhdr.sigfigs = 0;
+
+	/* write the header */
+	fwrite((char *)&fhdr, sizeof(fhdr), 1, f_savefile);
+
+	if (debug)
+	    fprintf(stderr,"Created pcap save file '%s'\n", filename);
+    }
+
+    /* create the packet header */
+    phdr.ts = current_time;
+    phdr.caplen = (unsigned)plast - (unsigned)pip + 1;
+    phdr.caplen += EH_SIZE;	/* add in the ether header */
+    phdr.len = phdr.caplen;	/* we don't know */
+
+    /* write the packet header */
+    fwrite(&phdr, sizeof(phdr), 1, f_savefile);
+
+    /* write a (bogus) ethernet header */
+    memset(&eth_header,0,EH_SIZE);
+    eth_header.ether_type = htons(ETHERTYPE_IP);
+    fwrite(&eth_header, sizeof(eth_header), 1, f_savefile);
+
+    /* write the IP/TCP parts */
+    wlen = phdr.caplen - EH_SIZE;	/* remove the ether header */
+    fwrite(pip, wlen, 1, f_savefile);
+}
+    
+
+
+#else /* GROK_TCPDUMP */
+
+void
+PcapSavePacket(
+    char *filename,
+    struct ip *pip,
+    void *plast)
+{
+    fprintf(stderr,"\
+Sorry, packet writing only supported with the pcap library\n\
+compiled into the program (See GROK_TCPDUMP)\n");
+    exit(-2);
 }
 
 

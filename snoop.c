@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,13 +26,14 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.6 1997/07/24 21:11:19 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.10 1998/03/05 01:17:14 sdo Exp $";
 
 
 /* 
  * snoop.c - SNOOP specific file reading stuff
+ *	ipv6 addition by Nasseef Abukamail
  */
 
 
@@ -56,7 +57,6 @@ struct snoop_packet_header {
 /* static buffers for reading */
 static struct ether_header *pep;
 static int *pip_buf;
-
 
 /* return the next packet header */
 /* currently only works for ETHERNET */
@@ -107,9 +107,10 @@ pread_snoop(
 	len -= sizeof(struct ether_header);
 	if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
 	    if (rlen != 0)
-		fprintf(stderr,
-			"Couldn't read %d more bytes, skipping last packet\n",
-			len);
+		if (debug)
+		    fprintf(stderr,
+			    "Couldn't read %d more bytes, skipping last packet\n",
+			    len);
 	    return(0);
 	}
 
@@ -124,10 +125,13 @@ pread_snoop(
 	*pphys  = pep;
 	*pphystype = PHYS_ETHER;
 
-	/* if it's not TCP/IP, then skip it */
-	if ((ntohs(pep->ether_type) != ETHERTYPE_IP) ||
-	    ((*ppip)->ip_p != IPPROTO_TCP))
+	/* if it's not IP, then skip it */
+	if ((ntohs(pep->ether_type) != ETHERTYPE_IP) &&
+	    (ntohs(pep->ether_type) != ETHERTYPE_IPV6)) {
+	    if (debug > 2)
+		fprintf(stderr,"pread_snoop: not an IP packet\n");
 	    continue;
+	}
 
 	return(1);
     }
@@ -138,7 +142,7 @@ pread_snoop(
 /*
  * is_snoop()   is the input file in snoop format??
  */
-int (*is_snoop(void))()
+pread_f *is_snoop(void)
 {
     char buf[20];
     int rlen;

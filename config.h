@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_config[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.5 1997/03/27 17:55:29 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.6 1998/03/05 01:05:59 sdo Exp $";
 
 
 /* define GROK_SNOOP if you want tcptrace to understand the output

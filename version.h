@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,15 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_version[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/version.h,v 3.20 1997/09/05 19:16:58 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/version.h,v 3.42 1998/08/14 19:24:35 sdo Exp $";
 
 
-#define VERSION "Ostermann's tcptrace -- version 4.1.1 -- Fri Sep  5, 1997"
+/* source code version information */
+#define VERSION "Ostermann's tcptrace -- version 5.0.6 -- Fri Aug 14, 1998"
+
+/* build information */
+/* constants filled in when version.c is compiled */
+extern char *built_bywhom;
+extern char *built_when;
+extern char *built_where;
+

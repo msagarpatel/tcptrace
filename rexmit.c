@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.8 1997/09/05 16:02:22 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.12 1998/08/13 16:04:12 sdo Exp $";
 
 
 /* 
@@ -45,7 +45,7 @@ static char const rcsid[] =
 
 /*
 This function rexmit() checks to see if a particular packet
-is a retransmit. It returns 0 if it is'nt a retransmit and 
+is a retransmit. It returns 0 if it isn't a retransmit and 
 returns the number of bytes retransmitted if it is a retransmit - 
 considering the fact that it might be a partial retransmit. 
 It can also keep track of packets that come out of order.
@@ -387,6 +387,7 @@ rtt_ackin(
     etime_rtt = elapsed(pseg->time,current_time);
 
     if (pseg->retrans == 0) {
+	ptcb->rtt_last = etime_rtt;
 	if ((ptcb->rtt_min == 0) || (ptcb->rtt_min > etime_rtt))
 	    ptcb->rtt_min = etime_rtt;
 
@@ -398,6 +399,7 @@ rtt_ackin(
 	++ptcb->rtt_count;
     } else {
 	/* retrans, can't use it */
+	ptcb->rtt_last = 0.0;
 	if ((ptcb->rtt_min_last == 0) || (ptcb->rtt_min_last > etime_rtt))
 	    ptcb->rtt_min_last = etime_rtt;
 

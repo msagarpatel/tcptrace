@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,20 +26,19 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.15 1997/09/05 19:17:55 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.46 1998/08/14 20:09:15 sdo Exp $";
 
 
 #include "tcptrace.h"
 #include "gcache.h"
 
 /* locally global variables */
-static int trace_count = 0;
-static int packet_count = 0;
+static int tcp_packet_count = 0;
 static int search_count = 0;
 static Bool *ignore_pairs = NULL;/* which ones will we ignore */
-static Bool bottom_letters = 0;
+static Bool bottom_letters = 0;	/* I don't use this anymore */
 static Bool more_conns_ignored = FALSE;
 
 
@@ -48,17 +47,17 @@ static Bool more_conns_ignored = FALSE;
 int num_tcp_pairs = -1;	/* how many pairs we've allocated */
 tcp_pair **ttp = NULL;	/* array of pointers to allocated pairs */
 int max_tcp_pairs = 64; /* initial value, automatically increases */
+u_long tcp_trace_count = 0;
 
 
 /* local routine definitions */
-static void CopyAddr(tcp_pair_addrblock *, ipaddr,ipaddr,portnum,portnum);
-static int WhichDir(tcp_pair_addrblock *, tcp_pair_addrblock *);
-static int SameConn(tcp_pair_addrblock *, tcp_pair_addrblock *, int *);
 static tcp_pair *NewTTP(struct ip *, struct tcphdr *);
 static tcp_pair *FindTTP(struct ip *, struct tcphdr *, int *);
 static void MoreTcpPairs(int num_needed);
 static void ExtractContents(u_long seq, u_long tcp_data_bytes,
 			    u_long saved_data_bytes, void *pdata, tcb *ptcb);
+static Bool check_hw_dups(u_short id, seqnum seq, tcb *ptcb);
+static u_long SeqRep(tcb *ptcb, u_long seq);
 
 
 
@@ -73,12 +72,14 @@ int thru_interval = 10;	/* in segments */
 
 
 /* what colors to use */
-/* choose from: "green" "red" "blue" "yellow" "purple" "orange" "magenta" "pink" */
+/* choose from: "green" "red" "blue" "yellow" "purple" "orange"
+   "magenta" "pink" */
 char *window_color	= "yellow";
 char *ack_color		= "green";
 char *sack_color	= "purple";
 char *data_color	= "white";
 char *retrans_color	= "red";
+char *hw_dup_color	= "blue";
 char *out_order_color	= "pink";
 char *text_color	= "magenta";
 char *default_color	= "white";
@@ -107,29 +108,52 @@ elapsed(
 
 
 
-/* WARNING, this routines "understands" the internal structure of IPv4 addresses */
-/* will break under IPng... */
-static void
+/* copy the IP addresses and port numbers into an addrblock structure	*/
+/* in addition to copying the address, we also create a HASH value	*/
+/* which is based on BOTH IP addresses and port numbers.  It allows	*/
+/* faster comparisons most of the time					*/
+void
 CopyAddr(
     tcp_pair_addrblock *ptpa,
-    ipaddr	ip1,
-    ipaddr	ip2,
+    struct ip *pip,
     portnum	port1,
     portnum	port2)
 {
-    IP_COPYADDR(ptpa->a_address, ip1);
-    IP_COPYADDR(ptpa->b_address, ip2);
     ptpa->a_port = port1;
     ptpa->b_port = port2;
 
-    /* fill in the hashed address */
-    ptpa->hash = ptpa->a_address.s_addr + ptpa->b_address.s_addr
-	+ ptpa->a_port + ptpa->b_port;
+    if (PIP_ISV4(pip)) { /* V4 */
+	IP_COPYADDR(&ptpa->a_address, *IPV4ADDR2ADDR(&pip->ip_src));
+	IP_COPYADDR(&ptpa->b_address, *IPV4ADDR2ADDR(&pip->ip_dst));
+	/* fill in the hashed address */
+	ptpa->hash = ptpa->a_address.un.ip4.s_addr
+	    + ptpa->b_address.un.ip4.s_addr
+	    + ptpa->a_port + ptpa->b_port;
+    } else { /* V6 */
+	int i;
+	struct ipv6 *pip6 = (struct ipv6 *)pip;
+	IP_COPYADDR(&ptpa->a_address, *IPV6ADDR2ADDR(&pip6->ip6_saddr));
+	IP_COPYADDR(&ptpa->b_address, *IPV6ADDR2ADDR(&pip6->ip6_daddr));
+	/* fill in the hashed address */
+	ptpa->hash = ptpa->a_port + ptpa->b_port;
+	for (i=0; i < 16; ++i) {
+	    ptpa->hash += ptpa->a_address.un.ip6.s6_addr[i];
+	    ptpa->hash += ptpa->b_address.un.ip6.s6_addr[i];
+	}
+    }
+
+    if (debug > 3)
+	printf("Hash of (%s:%d,%s:%d) is %d\n",
+	       HostName(ptpa->a_address),
+	       ptpa->a_port,
+	       HostName(ptpa->b_address),
+	       ptpa->b_port,
+	       ptpa->hash);
 }
 
 
 
-static int
+int
 WhichDir(
     tcp_pair_addrblock *ptpa1,
     tcp_pair_addrblock *ptpa2)
@@ -174,7 +198,7 @@ WhichDir(
 
 
 
-static int
+int
 SameConn(
     tcp_pair_addrblock *ptpa1,
     tcp_pair_addrblock *ptpa2,
@@ -210,23 +234,28 @@ NewTTP(
 
 
     /* grab the address from this packet */
-    CopyAddr(&ptp->addr_pair, pip->ip_src, pip->ip_dst,
-	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
+    CopyAddr(&ptp->addr_pair,
+	     pip, ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
 
     ptp->a2b.time.tv_sec = -1;
     ptp->b2a.time.tv_sec = -1;
 
-    ptp->a2b.host_letter = strdup(HostLetter(2*num_tcp_pairs));
-    ptp->b2a.host_letter = strdup(HostLetter((2*num_tcp_pairs) + 1));
+    ptp->a2b.host_letter = strdup(NextHostLetter());
+    ptp->b2a.host_letter = strdup(NextHostLetter());
 
     ptp->a2b.ptp = ptp;
     ptp->b2a.ptp = ptp;
     ptp->a2b.ptwin = &ptp->b2a;
     ptp->b2a.ptwin = &ptp->a2b;
 
+    /* fill in connection name fields */
+    ptp->a_hostname = strdup(HostName(ptp->addr_pair.a_address));
+    ptp->a_portname = strdup(ServiceName(ptp->addr_pair.a_port));
     ptp->a_endpoint =
 	strdup(EndpointName(ptp->addr_pair.a_address,
 			    ptp->addr_pair.a_port));
+    ptp->b_hostname = strdup(HostName(ptp->addr_pair.b_address));
+    ptp->b_portname = strdup(ServiceName(ptp->addr_pair.b_port));
     ptp->b_endpoint = 
 	strdup(EndpointName(ptp->addr_pair.b_address,
 			    ptp->addr_pair.b_port));
@@ -236,19 +265,25 @@ NewTTP(
 	if (!ignore_non_comp || (SYN_SET(ptcp))) {
 	    sprintf(title,"%s_==>_%s (time sequence graph)",
 		    ptp->a_endpoint, ptp->b_endpoint);
-	    ptp->a2b.tsg_plotter = new_plotter(&ptp->a2b,NULL,title,
-					       "time","sequence number",
-					       PLOT_FILE_EXTENSION);
+	    ptp->a2b.tsg_plotter =
+		new_plotter(&ptp->a2b,NULL,title,
+			    graph_time_zero?"relative time":"time",
+			    graph_seq_zero?"sequence offset":"sequence number",
+			    PLOT_FILE_EXTENSION);
 	    sprintf(title,"%s_==>_%s (time sequence graph)",
 		    ptp->b_endpoint, ptp->a_endpoint);
-	    ptp->b2a.tsg_plotter = new_plotter(&ptp->b2a,NULL,title,
-					       "time","sequence number",
-					       PLOT_FILE_EXTENSION);
+	    ptp->b2a.tsg_plotter =
+		new_plotter(&ptp->b2a,NULL,title,
+			    graph_time_zero?"relative time":"time",
+			    graph_seq_zero?"sequence offset":"sequence number",
+			    PLOT_FILE_EXTENSION);
 	}
     }
 
     ptp->a2b.ss = (seqspace *)MallocZ(sizeof(seqspace));
     ptp->b2a.ss = (seqspace *)MallocZ(sizeof(seqspace));
+
+    ptp->filename = cur_filename;
 
     return(ptp);
 }
@@ -272,9 +307,8 @@ FindTTP(
     int dir;
     hash hval;
 
-
     /* grab the address from this packet */
-    CopyAddr(&tp_in.addr_pair, pip->ip_src, pip->ip_dst,
+    CopyAddr(&tp_in.addr_pair, pip,
 	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
 
     /* grab the hash value (already computed by CopyAddr) */
@@ -346,13 +380,13 @@ FindTTP(
 tcp_pair *
 dotrace(
     struct ip *pip,
+    struct tcphdr *ptcp,
     void *plast)
 {
-    struct tcphdr	*ptcp;
     struct tcp_options *ptcpo;
     tcp_pair	*ptp_save;
-    unsigned	int tcp_length;
-    unsigned	int tcp_data_length;
+    int		tcp_length;
+    int		tcp_data_length;
     u_long	start;
     u_long	end;
     tcb		*thisdir;
@@ -362,8 +396,9 @@ dotrace(
     PLOTTER	from_tsgpl;
     int		dir;
     Bool	retrans;
+    Bool	hw_dup = FALSE;	/* duplicate at the hardware level */
     int		retrans_num_bytes;
-    Bool	out_order;  /* out of order */
+    Bool	out_order;	/* out of order */
     u_short	th_sport;	/* source port */
     u_short	th_dport;	/* destination port */
     tcp_seq	th_seq;		/* sequence number */
@@ -371,13 +406,11 @@ dotrace(
     u_short	th_win;		/* window */
     short	ip_len;		/* total length */
 
-    /* find the start of the TCP header */
-    ptcp = (struct tcphdr *) ((char *)pip + 4*pip->ip_hl);
-
     /* make sure we have enough of the packet */
     if ((unsigned)ptcp + sizeof(struct tcphdr)-1 > (unsigned)plast) {
-	if (printtrunc)
-	    fprintf(stderr,"TCP packet %d truncated too short to trace, ignored\n",
+	if (warn_printtrunc)
+	    fprintf(stderr,
+		    "TCP packet %lu truncated too short to trace, ignored\n",
 		    pnum);
 	++ctrunc;
 	return(NULL);
@@ -390,21 +423,21 @@ dotrace(
     th_sport = ntohs(ptcp->th_sport);
     th_dport = ntohs(ptcp->th_dport);
     th_win   = ntohs(ptcp->th_win);
-    ip_len   = ntohs(pip->ip_len);
+    ip_len   = gethdrlength(pip, plast) + getpayloadlength(pip,plast);
 
     /* make sure this is one of the connections we want */
     ptp_save = FindTTP(pip,ptcp,&dir);
 
-    ++packet_count;
+    ++tcp_packet_count;
 
     if (ptp_save == NULL) {
 	return(NULL);
     }
 
-    ++trace_count;
+    ++tcp_trace_count;
 
     /* do time stats */
-    if (ptp_save->first_time.tv_sec == 0) {
+    if (ZERO_TIME(&ptp_save->first_time)) {
 	ptp_save->first_time = current_time;
     }
     ptp_save->last_time = current_time;
@@ -415,8 +448,22 @@ dotrace(
 	return(ptp_save);
     }
 
+    /* save to a file if requested */
+    if (output_filename) {
+	PcapSavePacket(output_filename,pip,plast);
+    }
+
+    /* now, print it if requested */
+    if (printem && !printallofem) {
+	printf("Packet %lu\n", pnum);
+	printpacket(0,		/* original length not available */
+		    (unsigned)plast - (unsigned)pip + 1,
+		    NULL,0,	/* physical stuff not known here */
+		    pip,plast);
+    }
+
     /* grab the address from this packet */
-    CopyAddr(&tp_in.addr_pair, pip->ip_src, pip->ip_dst,
+    CopyAddr(&tp_in.addr_pair, pip,
 	     th_sport, th_dport);
 
     /* figure out which direction this packet is going */
@@ -426,6 +473,12 @@ dotrace(
     } else {
 	thisdir  = &ptp_save->b2a;
 	otherdir = &ptp_save->a2b;
+    }
+
+
+    /* simple bookkeeping */
+    if (PIP_ISV6(pip)) {
+	++thisdir->ipv6_segments;
     }
 
 
@@ -461,7 +514,7 @@ dotrace(
     }
 
     /* calculate data length */
-    tcp_length = ip_len - (4 * pip->ip_hl);
+    tcp_length = getpayloadlength(pip, plast);
     tcp_data_length = tcp_length - (4 * ptcp->th_off);
 
     /* SYN and FIN are really data, too (sortof) */
@@ -475,12 +528,18 @@ dotrace(
     /* do data stats */
     if (tcp_data_length > 0) {
 	thisdir->data_pkts += 1;
+	if (PUSH_SET(ptcp))
+	    thisdir->data_pkts_push += 1;
 	thisdir->data_bytes += tcp_data_length;
 	if (tcp_data_length > thisdir->max_seg_size)
 	    thisdir->max_seg_size = tcp_data_length;
 	if ((thisdir->min_seg_size == 0) ||
 	    (tcp_data_length < thisdir->min_seg_size))
 	    thisdir->min_seg_size = tcp_data_length;
+	/* record first and last times for data (Mallman) */
+	if (ZERO_TIME(&thisdir->first_data_time))
+	    thisdir->first_data_time = current_time;
+	thisdir->last_data_time = current_time;
     }
 
     /* total packets stats */
@@ -508,21 +567,39 @@ dotrace(
     }
     thisdir->max_seq = end;
 
-  
+
+    /* check for hardware duplicates */
+    /* only works for IPv4, IPv6 has no mandatory ID field */
+    if (PIP_ISV4(pip))
+	hw_dup = check_hw_dups(pip->ip_id, th_seq, thisdir);
+
+
     /* save the stream contents, if requested */
-    if (save_tcp_data && (tcp_data_length > 0)) {
+    if (tcp_data_length > 0) {
 	u_char *pdata = (u_char *)ptcp + ptcp->th_off*4;
 	u_long saved;
+	u_long	missing;
+
 	saved = tcp_data_length;
 	if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
 	    saved = (u_long)plast - (u_long)pdata + 1;
-	ExtractContents(start,tcp_data_length,saved,pdata,thisdir);
+
+	/* see what's missing */
+	missing = tcp_data_length - saved;
+	if (missing > 0) {
+	    thisdir->trunc_bytes += missing;
+	    ++thisdir->trunc_segs;
+	}
+
+	if (save_tcp_data)
+	    ExtractContents(start,tcp_data_length,saved,pdata,thisdir);
     }
 
     /* record sequence limits */
     if (SYN_SET(ptcp)) {
 	thisdir->syn = start;
-	otherdir->ack = start;  /* bug fix for Rob Austein <sra@epilogue.com> */
+	otherdir->ack = start;
+		/* bug fix for Rob Austein <sra@epilogue.com> */
     }
     if (FIN_SET(ptcp)) {
 	/* bug fix, if there's data here too, we need to bump up the FIN */
@@ -550,12 +627,12 @@ dotrace(
     /* plot out-of-order segments, if asked */
     if (out_order && (from_tsgpl != NO_PLOTTER) && show_out_order) {
 	plotter_perm_color(from_tsgpl, out_order_color);
-	plotter_text(from_tsgpl, current_time, end,
+	plotter_text(from_tsgpl, current_time, SeqRep(thisdir,end),
 		     "a", "O");
 	if (bottom_letters)
-	    plotter_text(from_tsgpl, current_time, thisdir->min_seq-1500,
+	    plotter_text(from_tsgpl, current_time,
+			 SeqRep(thisdir,thisdir->min_seq)-1500,
 			 "c", "O");
-/* 	plotter_perm_color(from_tsgpl, default_color); */
     }
 
     if ((thisdir->time.tv_sec != -1) && (retrans_num_bytes>0)) {
@@ -564,12 +641,12 @@ dotrace(
 	thisdir->rexmit_bytes += retrans_num_bytes;
 	if (from_tsgpl != NO_PLOTTER && show_rexmit) {
 	    plotter_perm_color(from_tsgpl, retrans_color);
-	    plotter_text(from_tsgpl, current_time, end,
-			 "a", "R");
+	    plotter_text(from_tsgpl, current_time, SeqRep(thisdir,end),
+			 "a", hw_dup?"HD":"R");
 	    if (bottom_letters)
-		plotter_text(from_tsgpl, current_time, thisdir->min_seq-1500,
-			     "c", "R");
-/* 	    plotter_perm_color(from_tsgpl, default_color); */
+		plotter_text(from_tsgpl, current_time,
+			     SeqRep(thisdir,thisdir->min_seq)-1500,
+			     "c", hw_dup?"HD":"R");
 	}
     } else {
 	thisdir->seq = end;
@@ -580,37 +657,64 @@ dotrace(
     if (from_tsgpl != NO_PLOTTER) {
 	plotter_perm_color(from_tsgpl, data_color);
 	if (SYN_SET(ptcp)) {		/* SYN  */
-	    plotter_perm_color(from_tsgpl, synfin_color);
-	    plotter_diamond(from_tsgpl, current_time, start);
-	    plotter_text(from_tsgpl, current_time, end, "a", "SYN");
-	    plotter_uarrow(from_tsgpl, current_time, end);
-	    plotter_line(from_tsgpl, current_time, start, current_time, end);
-/* 	    plotter_perm_color(from_tsgpl, default_color); */
+	    /* if we're using time offsets from zero, it's easier if */
+	    /* both graphs (a2b and b2a) start at the same point.  That */
+	    /* will only happen if the "left-most" graphic is in the */
+	    /* same place in both.  To make sure, mark the SYNs */
+	    /* as a green dot in the other direction */
+	    if (ACK_SET(ptcp)) {
+		plotter_temp_color(from_tsgpl, ack_color);
+		plotter_dot(from_tsgpl,
+			    ptp_save->first_time, SeqRep(thisdir,start));
+	    }
+	    plotter_perm_color(from_tsgpl, hw_dup?hw_dup_color:synfin_color);
+	    plotter_diamond(from_tsgpl, current_time, SeqRep(thisdir,start));
+	    plotter_text(from_tsgpl, current_time,
+			 SeqRep(thisdir,end), "a", hw_dup?"HD SYN":"SYN");
+	    plotter_uarrow(from_tsgpl, current_time, SeqRep(thisdir,end));
+	    plotter_line(from_tsgpl,
+			 current_time, SeqRep(thisdir,start),
+			 current_time, SeqRep(thisdir,end));
 	} else if (FIN_SET(ptcp)) {	/* FIN  */
-	    plotter_perm_color(from_tsgpl, synfin_color);
-	    plotter_box(from_tsgpl, current_time, start);
-	    plotter_text(from_tsgpl, current_time, end, "a", "FIN");
-	    plotter_uarrow(from_tsgpl, current_time, end);
-	    plotter_line(from_tsgpl, current_time, start, current_time, end);
-/* 	    plotter_perm_color(from_tsgpl, default_color); */
+	    plotter_perm_color(from_tsgpl, hw_dup?hw_dup_color:synfin_color);
+	    plotter_box(from_tsgpl, current_time, SeqRep(thisdir,start));
+	    plotter_text(from_tsgpl, current_time,
+			 SeqRep(thisdir,end), "a", hw_dup?"HD FIN":"FIN");
+	    plotter_uarrow(from_tsgpl, current_time, SeqRep(thisdir,end));
+	    plotter_line(from_tsgpl,
+			 current_time, SeqRep(thisdir,start),
+			 current_time, SeqRep(thisdir,end));
 	} else if (tcp_data_length > 0) {		/* DATA */
-	    if (retrans)
+	    if (hw_dup) {
+		plotter_perm_color(from_tsgpl, hw_dup_color);
+	    } else if (retrans) {
 		plotter_perm_color(from_tsgpl, retrans_color);
-	    plotter_darrow(from_tsgpl, current_time, start);
+	    }
+	    plotter_darrow(from_tsgpl, current_time, SeqRep(thisdir,start));
 	    if (PUSH_SET(ptcp)) {
 		/* colored diamond is PUSH */
 		plotter_temp_color(from_tsgpl, push_color);
-		plotter_diamond(from_tsgpl, current_time, end);
+		plotter_diamond(from_tsgpl,
+				current_time, SeqRep(thisdir,end));
 		plotter_temp_color(from_tsgpl, push_color);
-		plotter_dot(from_tsgpl, current_time, end);
+		plotter_dot(from_tsgpl, current_time, SeqRep(thisdir,end));
 	    } else {
-		plotter_uarrow(from_tsgpl, current_time, end);
+		plotter_uarrow(from_tsgpl, current_time, SeqRep(thisdir,end));
 	    }
-	    plotter_line(from_tsgpl, current_time, start, current_time, end);
-/* 	    if (retrans) */
-/* 		plotter_perm_color(from_tsgpl, default_color); */
+	    plotter_line(from_tsgpl,
+			 current_time, SeqRep(thisdir,start),
+			 current_time, SeqRep(thisdir,end));
+	} else if (tcp_data_length == 0) {
+	    /* for Brian Utterback */
+	    if (graph_zero_len_pkts) {
+		/* draw zero-length packets */
+		/* shows up as an X, really two arrow heads */
+		plotter_darrow(from_tsgpl,
+			       current_time, SeqRep(thisdir,start));
+		plotter_uarrow(from_tsgpl,
+			       current_time, SeqRep(thisdir,start));
+	    }
 	}
-/* 	plotter_perm_color(from_tsgpl, default_color); */
     }
 
     /* check for RESET */
@@ -627,13 +731,13 @@ dotrace(
 	if (to_tsgpl != NO_PLOTTER) {
 	    plotter_temp_color(to_tsgpl, text_color);
 	    plotter_text(to_tsgpl,
-			 current_time, plot_at,
+			 current_time, SeqRep(thisdir,plot_at),
 			 "a", "RST_IN");
 	}
 	if (from_tsgpl != NO_PLOTTER) {
 	    plotter_temp_color(from_tsgpl, text_color);
 	    plotter_text(from_tsgpl,
-			 current_time, start,
+			 current_time, SeqRep(thisdir,start),
 			 "a", "RST_OUT");
 	}
 	if (ACK_SET(ptcp))
@@ -663,40 +767,48 @@ dotrace(
 	    if (to_tsgpl != NO_PLOTTER && show_zero_window) {
 		plotter_temp_color(to_tsgpl, text_color);
 		plotter_text(to_tsgpl,
-			     current_time, winend,
+			     current_time, SeqRep(otherdir,winend),
 			     "a", "Z");
 		if (bottom_letters) {
 		    plotter_temp_color(to_tsgpl, text_color);
 		    plotter_text(to_tsgpl,
-				 current_time, otherdir->min_seq-1500,
+				 current_time,
+				 SeqRep(otherdir,otherdir->min_seq)-1500,
 				 "a", "Z");
 		}
 	    }
 	}
 
 	++thisdir->ack_pkts;
+	if ((tcp_data_length == 0) &&
+	    !SYN_SET(ptcp) && !FIN_SET(ptcp) && !RESET_SET(ptcp)) {
+	    ++thisdir->pureack_pkts;
+	}
+	    
 
 	if (to_tsgpl != NO_PLOTTER && thisdir->time.tv_sec != -1) {
 	    plotter_perm_color(to_tsgpl, ack_color);
-	    plotter_line(to_tsgpl, thisdir->time,
-			 thisdir->ack, current_time, thisdir->ack);
+	    plotter_line(to_tsgpl,
+			 thisdir->time, SeqRep(otherdir,thisdir->ack),
+			 current_time, SeqRep(otherdir,thisdir->ack));
 	    if (thisdir->ack != ack) {
-		plotter_line(to_tsgpl, current_time, thisdir->ack, current_time, ack);
+		plotter_line(to_tsgpl,
+			     current_time, SeqRep(otherdir,thisdir->ack),
+			     current_time, SeqRep(otherdir,ack));
 	    } else {
-		plotter_dtick(to_tsgpl, current_time, ack);
+		plotter_dtick(to_tsgpl, current_time, SeqRep(otherdir,ack));
 	    }
 	    plotter_perm_color(to_tsgpl, window_color);
 	    plotter_line(to_tsgpl,
-			 thisdir->time, thisdir->windowend,
-			 current_time, thisdir->windowend);
+			 thisdir->time, SeqRep(otherdir,thisdir->windowend),
+			 current_time, SeqRep(otherdir,thisdir->windowend));
 	    if (thisdir->windowend != winend) {
 		plotter_line(to_tsgpl,
-			     current_time, thisdir->windowend,
-			     current_time, winend);
+			     current_time, SeqRep(otherdir,thisdir->windowend),
+			     current_time, SeqRep(otherdir,winend));
 	    } else {
-		plotter_utick(to_tsgpl, current_time, winend);
+		plotter_utick(to_tsgpl, current_time, SeqRep(otherdir,winend));
 	    }
-/* 	    plotter_perm_color(to_tsgpl, default_color); */
 	}
 
 	/* draw sacks, if appropriate */
@@ -706,12 +818,13 @@ dotrace(
 	    for (scount = 0; scount < ptcpo->sack_count; ++scount) {
 		plotter_perm_color(to_tsgpl, sack_color);
 		plotter_line(to_tsgpl,
-			     current_time, ptcpo->sacks[scount].sack_left,
-			     current_time, ptcpo->sacks[scount].sack_right);
+			     current_time,
+			     SeqRep(otherdir,ptcpo->sacks[scount].sack_left),
+			     current_time,
+			     SeqRep(otherdir,ptcpo->sacks[scount].sack_right));
 		plotter_text(to_tsgpl, current_time,
-			     ptcpo->sacks[scount].sack_right,
+			     SeqRep(otherdir,ptcpo->sacks[scount].sack_right),
 			     "a", "S");  /* 'S' is for Sack */
-/* 		plotter_perm_color(to_tsgpl, default_color); */
 	    }
 	}
 	thisdir->time = current_time;
@@ -759,44 +872,86 @@ void
 trace_done(void)
 {
     tcp_pair *ptp;
+    FILE *f_passfilter = NULL;
     int ix;
 
-    if (trace_count == 0) {
-	fprintf(stdout,"no traced packets\n");
-	return;
+    if (!printsuppress) {
+	if (tcp_trace_count == 0) {
+	    fprintf(stdout,"no traced TCP packets\n");
+	    return;
+	} else {
+	    fprintf(stdout,"TCP connection info:\n");
+	}
     }
 
     if (!printbrief)
-	fprintf(stdout,"%d %s traced:\n",
+	fprintf(stdout,"%d TCP %s traced:\n",
 		num_tcp_pairs + 1,
 		num_tcp_pairs==0?"connection":"connections");
-    fprintf(stdout,"%d packets seen, %d TCP packets traced\n",
-	    packet_count, trace_count);
     if (ctrunc > 0) {
-	fprintf(stdout,"*** %d packets were too short to process at some point\n",
+	fprintf(stdout,
+		"*** %lu packets were too short to process at some point\n",
 		ctrunc);
-	if (!printtrunc)
+	if (!warn_printtrunc)
 	    fprintf(stdout,"\t(use -w option to show details)\n");
     }
     if (debug>1)
-	fprintf(stdout,"average search length: %d\n",
-		search_count / packet_count);
-    for (ix = 0; ix <= num_tcp_pairs; ++ix) {
-	ptp = ttp[ix];
-	if (!ptp->ignore_pair) {
-	    if (printbrief) {
-		fprintf(stdout,"%3d: ", ix+1);
-		PrintBrief(ptp);
-	    } else if (!ignore_non_comp || ConnComplete(ptp)) {
-		if (ix > 0)
-		    fprintf(stdout,"================================\n");
-		fprintf(stdout,"connection %d:\n", ix+1);
-		PrintTrace(ptp);
+	fprintf(stdout,"average TCP search length: %d\n",
+		search_count / tcp_packet_count);
+
+    /* if we're filtering, see which connections pass */
+    if (filter_output) {
+	static int count = 0;
+
+	/* file to dump matching connection numbers into */
+	f_passfilter = fopen(PASS_FILTER_FILENAME,"w+");
+	if (f_passfilter == NULL) {
+	    perror(PASS_FILTER_FILENAME);
+	    exit(-1);
+	}
+
+	/* mark the connections to ignore */
+	for (ix = 0; ix <= num_tcp_pairs; ++ix) {
+	    ptp = ttp[ix];
+	    if (PassesFilter(ptp)) {
+		if (++count == 1)
+		    fprintf(f_passfilter,"%d", ix+1);
+		else
+		    fprintf(f_passfilter,",%d", ix+1);
+	    } else {
+		/* else ignore it */
+		ptp->ignore_pair = TRUE;
 	    }
 	}
     }
 
-    if ((debug>1) && !nonames)
+
+    /* print each connection */
+    if (!printsuppress) {
+	for (ix = 0; ix <= num_tcp_pairs; ++ix) {
+	    ptp = ttp[ix];
+
+	    if (!ptp->ignore_pair) {
+		if (printbrief) {
+		    fprintf(stdout,"%3d: ", ix+1);
+		    PrintBrief(ptp);
+		} else if (!ignore_non_comp || ConnComplete(ptp)) {
+		    if (ix > 0)
+			fprintf(stdout,"================================\n");
+		    fprintf(stdout,"TCP connection %d:\n", ix+1);
+		    PrintTrace(ptp);
+		}
+	    }
+	}
+    }
+
+    /* if we're filtering, close the file */
+    if (filter_output) {
+	fprintf(f_passfilter,"\n");
+	fclose(f_passfilter);
+    }
+
+    if ((debug>2) && !nonames)
 	cadump();
 }
 
@@ -936,31 +1091,60 @@ ParseOptions(
     popt  = (u_char *)ptcp + sizeof(struct tcphdr);
     pdata = (u_char *)ptcp + ptcp->th_off*4;
 
+    /* init the options structure */
+    memset(&tcpo,0,sizeof(tcpo));
     tcpo.mss = tcpo.ws = tcpo.tsval = tcpo.tsecr = -1;
     tcpo.sack_req = 0;
     tcpo.sack_count = -1;
+    tcpo.echo_req = tcpo.echo_repl = -1;
+    tcpo.cc = tcpo.ccnew = tcpo.ccecho = -1;
 
+    /* a quick sanity check, the unused (MBZ) bits must BZ! */
+    if (warn_printbadmbz) {
+	if (ptcp->th_x2 != 0) {
+	    fprintf(stderr,
+		    "TCP packet %lu: 4 reserved bits are not zero (0x%01x)\n",
+		    pnum, ptcp->th_x2);
+	}
+	if ((ptcp->th_flags & 0xc0) != 0) {
+	    fprintf(stderr,
+		    "TCP packet %lu: upper flag bits are not zero (0x%02x)\n",
+		    pnum, ptcp->th_flags);
+	}
+    } else {
+	static int warned = 0;
+	if (!warned &&
+	    ((ptcp->th_x2 != 0) || ((ptcp->th_flags & 0xc0) != 0))) {
+	    warned = 1;
+	    fprintf(stderr, "\
+TCP packet %lu: reserved bits are not all zero.  \n\
+\tFurther warnings disabled, use '-w' for more info\n",
+		    pnum);
+	}
+    }
+
+    /* looks good, now check each option in turn */
     while (popt < pdata) {
 	plen = popt+1;
 
 	/* check for truncation error */
 	if ((unsigned)popt > (unsigned)plast) {
-	    if (printtrunc)
+	    if (warn_printtrunc)
 		fprintf(stderr,"\
-ParseOptions: packet %d too short to parse remaining options\n", pnum);
+ParseOptions: packet %lu too short to parse remaining options\n", pnum);
 	    ++ctrunc;
 	    break;
 	}
 
 #define CHECK_O_LEN(opt) \
 	if (*plen == 0) { fprintf(stderr, "\
-ParseOptions: packet %d %s option has length 0, skipping other options\n", \
+ParseOptions: packet %lu %s option has length 0, skipping other options\n", \
               pnum,opt); \
 	      popt = pdata; break;} \
 	if ((unsigned)popt > (unsigned)(plast)) { \
-	    if (printtrunc) \
+	    if (warn_printtrunc) \
 		fprintf(stderr, "\
-ParseOptions: packet %d %s option cut short by snap length, skipping other options\n", \
+ParseOptions: packet %lu %s option truncated, skipping other options\n", \
               pnum,opt); \
 	      ++ctrunc; \
 	      popt = pdata; break;} \
@@ -985,6 +1169,31 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 	    tcpo.tsecr = ntohl(get_long_opt(popt+6));
 	    popt += *plen;
 	    break;
+	  case TCPOPT_ECHO:
+	    CHECK_O_LEN("TCPOPT_ECHO");
+	    tcpo.echo_req = ntohl(get_long_opt(popt+2));
+	    popt += *plen;
+	    break;
+	  case TCPOPT_ECHOREPLY:
+	    CHECK_O_LEN("TCPOPT_ECHOREPLY");
+	    tcpo.echo_repl = ntohl(get_long_opt(popt+2));
+	    popt += *plen;
+	    break;
+	  case TCPOPT_CC:
+	    CHECK_O_LEN("TCPOPT_CC");
+	    tcpo.cc = ntohl(get_long_opt(popt+2));
+	    popt += *plen;
+	    break;
+	  case TCPOPT_CCNEW:
+	    CHECK_O_LEN("TCPOPT_CCNEW");
+	    tcpo.ccnew = ntohl(get_long_opt(popt+2));
+	    popt += *plen;
+	    break;
+	  case TCPOPT_CCECHO:
+	    CHECK_O_LEN("TCPOPT_CCECHO");
+	    tcpo.ccecho = ntohl(get_long_opt(popt+2));
+	    popt += *plen;
+	    break;
 	  case TCPOPT_SACK_PERM:
 	    CHECK_O_LEN("TCPOPT_SACK_PERM");
 	    tcpo.sack_req = 1;
@@ -1006,9 +1215,9 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 		++psack;
 		if ((unsigned)psack > ((unsigned)plast+1)) {
 		    /* this SACK block isn't all here */
-		    if (printtrunc)
+		    if (warn_printtrunc)
 			fprintf(stderr,
-				"packet %d: SACK block truncated, ignoring the rest\n",
+				"packet %lu: SACK block truncated\n",
 				pnum);
 		    ++ctrunc;
 		    break;
@@ -1028,6 +1237,15 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 			"Warning, ignoring unknown TCP option 0x%x\n",
 			*popt);
 	    CHECK_O_LEN("TCPOPT_UNKNOWN");
+
+	    /* record it anyway... */
+	    if (tcpo.unknown_count < MAX_UNKNOWN) {
+		int ix = tcpo.unknown_count; /* make lint happy */
+		tcpo.unknowns[ix].unkn_opt = *popt;
+		tcpo.unknowns[ix].unkn_len = *plen;
+	    }
+	    ++tcpo.unknown_count;
+	    
 	    popt += *plen;
 	    break;
 	}
@@ -1051,51 +1269,69 @@ ExtractContents(
     u_long fptr;
     static char filename[15];
 
+    if (debug > 2)
+	fprintf(stderr,
+		"ExtractContents(seq:%ld  bytes:%ld  saved_bytes:%ld) called\n",
+		seq, tcp_data_bytes, saved_data_bytes);
+
     if (saved_data_bytes == 0)
 	return;
 
-    /* if we haven't (didn't) seen the SYN, then can't do this!! */
-    if (ptcb->syn_count == 0) {
-	if (debug>1)
-	    fprintf(stderr,"ExtractContents: skipping data, didn't see SYN\n");
-	return;
-    }
-    
     /* how many bytes do we have? */
     missing = tcp_data_bytes - saved_data_bytes;
-    if (debug > 2)
+    if ((debug > 2) && (missing > 0)) {
 	fprintf(stderr,"ExtractContents: missing %ld bytes (%ld-%ld)\n",
-	       missing,tcp_data_bytes,saved_data_bytes);
-    if (missing > 0) {
-	ptcb->trunc_bytes += missing;
-	++ptcb->trunc_segs;
+		missing,tcp_data_bytes,saved_data_bytes);
     }
 
     
     /* if the FILE is "-1", couldn't open file */
-    if (ptcb->extracted_contents_file == (MFILE *) -1) {
+    if (ptcb->extr_contents_file == (MFILE *) -1) {
 	return;
     }
 
     /* if the FILE is NULL, open file */
     sprintf(filename,"%s2%s%s", ptcb->host_letter, ptcb->ptwin->host_letter,
 	    CONTENTS_FILE_EXTENSION);
-    if (ptcb->extracted_contents_file == (MFILE *) NULL) {
+    if (ptcb->extr_contents_file == (MFILE *) NULL) {
 	MFILE *f;
 
 	if ((f = Mfopen(filename,"w")) == NULL) {
 	    perror(filename);
-	    ptcb->extracted_contents_file = (MFILE *) -1;
+	    ptcb->extr_contents_file = (MFILE *) -1;
 	}
 
 	if (debug)
 	    fprintf(stderr,"TCP contents file is '%s'\n", filename);
 
-	ptcb->extracted_contents_file = f;
+	ptcb->extr_contents_file = f;
 
-	/* beginning of the file is this sequence number */
-	ptcb->extr_lastseq = seq;
-	
+	if (ptcb->syn_count == 0) {
+	    /* we haven't seen the SYN.  This is bad because we can't tell */
+	    /* if there is data BEFORE this, which makes it tough to store */
+	    /* the file.  Let's be optimistic and hope we don't see */
+	    /* anything before this point.  Otherwise, we're stuck */
+	    ptcb->extr_lastseq = seq;
+	} else {
+	    /* beginning of the file is the data just past the SYN */
+	    ptcb->extr_lastseq = ptcb->syn+1;
+	}
+	/* in any case, anything before HERE is illegal (fails for very */
+	/* long files - FIXME */
+	ptcb->extr_initseq = ptcb->extr_lastseq;
+    }
+
+    /* it's illegal for the bytes to be BEFORE extr_initseq unless the file */
+    /* is "really long" (seq space has wrapped around) - FIXME(ugly) */
+    if ((SEQCMP(seq,ptcb->extr_initseq) < 0) &&
+	(ptcb->data_bytes < (0xffffffff/2))) {
+	/* if we haven't (didn't) seen the SYN, then can't do this!! */
+	if (debug>1) {
+	    fprintf(stderr,
+		    "ExtractContents: skipping data, preceeds first segment\n");
+	    fprintf(stderr,"\t and I didnt' see the SYN\n");
+	}
+	return;
     }
 
     /* see where we should start writing */
@@ -1103,23 +1339,31 @@ ExtractContents(
     offset = SEQCMP(seq,ptcb->extr_lastseq);
     
 
+    if (debug>10)
+	fprintf(stderr,
+		"TRYING to save %ld bytes from stream '%s2%s' at offset %ld\n",
+		saved_data_bytes,
+		ptcb->host_letter, ptcb->ptwin->host_letter,
+		offset);
+
     /* seek to the correct place in the file */
-    if (Mfseek(ptcb->extracted_contents_file, offset, SEEK_CUR) == -1) {
+    if (Mfseek(ptcb->extr_contents_file, offset, SEEK_CUR) == -1) {
 	perror("fseek");
 	exit(-1);
     }
 
     /* see where we are */
-    fptr = Mftell(ptcb->extracted_contents_file);
+    fptr = Mftell(ptcb->extr_contents_file);
 
     if (debug>1)
-	fprintf(stderr,"Saving %ld bytes from stream '%s2%s' at offset %ld in file '%s'\n",
+	fprintf(stderr,
+		"Saving %ld bytes from '%s2%s' at offset %ld in file '%s'\n",
 		saved_data_bytes,
 		ptcb->host_letter, ptcb->ptwin->host_letter,
 		fptr, filename);
 
     /* store the bytes */
-    if (Mfwrite(pdata,1,saved_data_bytes,ptcb->extracted_contents_file)
+    if (Mfwrite(pdata,1,saved_data_bytes,ptcb->extr_contents_file)
 	!= saved_data_bytes) {
 	perror("fwrite");
 	exit(-1);
@@ -1127,8 +1371,86 @@ ExtractContents(
 
     /* go back to where we started to not confuse the next write */
     ptcb->extr_lastseq = seq;
-    if (Mfseek(ptcb->extracted_contents_file, fptr, SEEK_SET) == -1) {
+    if (Mfseek(ptcb->extr_contents_file, fptr, SEEK_SET) == -1) {
 	perror("fseek 2");
 	exit(-1);
+    }
+}
+
+
+/* check for not-uncommon error of hardware-level duplicates
+   (same IP ID and TCP sequence number) */
+static Bool
+check_hw_dups(
+    u_short id,
+    seqnum seq,
+    tcb *tcb)
+{
+    int i;
+    struct str_hardware_dups *pshd;
+
+    /* see if we've seen this one before */
+    for (i=0; i < SEGS_TO_REMEMBER; ++i) {
+	pshd = &tcb->hardware_dups[i];
+	
+	if ((pshd->hwdup_seq == seq) && (pshd->hwdup_id == id) &&
+	    (pshd->hwdup_seq != 0) && (pshd->hwdup_id != 0)) {
+	    /* count it */
+	    ++tcb->num_hardware_dups;
+	    if (warn_printhwdups) {
+		printf("%s->%s: saw hardware duplicate of TCP seq %lu, IP ID %u (packet %lu == %lu)\n",
+		       tcb->host_letter,tcb->ptwin->host_letter,
+		       seq, id, pnum,pshd->hwdup_packnum);
+	    }
+	    return(TRUE);
+	}
+    }
+
+    /* remember it */
+    pshd = &tcb->hardware_dups[tcb->hardware_dups_ix];
+    pshd->hwdup_seq = seq;
+    pshd->hwdup_id = id;
+    pshd->hwdup_packnum = pnum;
+    tcb->hardware_dups_ix = (tcb->hardware_dups_ix+1) % SEGS_TO_REMEMBER;
+
+    return(FALSE);
+}
+
+
+/* given a tcp_pair and a packet, tell me which tcb it is */
+struct tcb *
+ptp2ptcb(
+    tcp_pair *ptp,
+    struct ip *pip,
+    struct tcphdr *ptcp)
+{
+    int dir = 0;
+    tcp_pair tp_in;
+
+    /* grab the address from this packet */
+    CopyAddr(&tp_in.addr_pair, pip,
+	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
+
+    /* check the direction */
+    if (!SameConn(&tp_in.addr_pair,&ptp->addr_pair,&dir))
+	return(NULL);  /* not found, internal error */
+
+    if (dir == A2B)
+	return(&ptp->a2b);
+    else
+	return(&ptp->b2a);
+}
+
+
+/* represent the sequence numbers absolute or relative to 0 */
+static u_long
+SeqRep(
+    tcb *ptcb,
+    u_long seq)
+{
+    if (graph_seq_zero) {
+	return(seq - ptcb->min_seq);
+    } else {
+	return(seq);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_compress[] =
-    "$Id: compress.h,v 1.3 1997/08/22 20:14:44 sdo Exp $";
+    "$Id: compress.h,v 1.5 1998/03/05 01:03:12 sdo Exp $";
 
 #define COMP_HDR_SIZE (8*1024)	/* number of bytes from a compressed file that */
 				/* we save into a real file for header check, */
@@ -65,7 +65,6 @@ struct comp_formats supported_comp_formats[] = {
 #ifdef UNCOMPRESS
     {".Z",  "Unix compress format", UNCOMPRESS, {"uncompress","-c","%s",NULL}},
 #endif /* UNCOMPRESS */
-
-    {NULL,NULL,NULL,{NULL}},	/* You must NOT remove this entry */
 };
+#define NUM_COMP_FORMATS (sizeof(supported_comp_formats) / sizeof(struct comp_formats))
 

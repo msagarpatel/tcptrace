@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_gcache[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/gcache.h,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/gcache.h,v 3.4 1998/03/05 01:07:17 sdo Exp $";
 
 
 /* gcache.h -- a general purpose caching mechanism */

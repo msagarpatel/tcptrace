@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.6 1997/09/05 16:02:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.10 1998/03/05 01:17:14 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -43,7 +43,7 @@ DoThru(
     double thruput;
 
     /* init, if not already done */
-    if (ptcb->thru_firsttime.tv_sec == 0) {
+    if (ZERO_TIME(&ptcb->thru_firsttime)) {
 	char title[210];
 
 	ptcb->thru_firsttime = current_time;
@@ -101,13 +101,15 @@ DoThru(
     }
 
     /* immediate value in yellow ticks */
-    etime = elapsed(ptcb->thru_lasttime,current_time);
-    if (etime == 0.0)
-	etime = 1000;	/* ick, what if "no time" has passed?? */
-    thruput = (double) nbytes / ((double) etime / 1000000.0);
-    plotter_temp_color(ptcb->thru_plotter,"yellow");
-    plotter_dot(ptcb->thru_plotter,
+    if (plot_tput_instant) {
+	etime = elapsed(ptcb->thru_lasttime,current_time);
+	if (etime == 0.0)
+	    etime = 1000;	/* ick, what if "no time" has passed?? */
+	thruput = (double) nbytes / ((double) etime / 1000000.0);
+	plotter_temp_color(ptcb->thru_plotter,"yellow");
+	plotter_dot(ptcb->thru_plotter,
 		    current_time, (int) thruput);
+    }
 
     /* add in the latest packet */
     ptcb->thru_lasttime = current_time;

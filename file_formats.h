@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_file_formats[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/file_formats.h,v 3.6 1997/07/24 21:10:59 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/file_formats.h,v 3.9 1998/07/23 21:16:04 sdo Exp $";
 
 
 /* 
@@ -42,7 +42,7 @@ static char const rcsid_file_formats[] =
 /**************************************************************/
 
 struct supported_formats {
-    int	(*(*test_func)())(void);/* pointer to the tester function	*/
+    pread_f	*(*test_func)(void);	/* pointer to the tester function	*/
     char	*format_name;	/* name of the file format		*/
     char	*format_descr;	/* description of the file format	*/
 };
@@ -64,21 +64,6 @@ struct supported_formats {
 /* TCP packets (if not, they're ignored).				*/
 
 
-/* give the prototypes for the is_GLORP() routines supported */
-#ifdef GROK_SNOOP
-	int (*is_snoop(void))();
-#endif /* GROK_SNOOP */
-#ifdef GROK_NETM
-	int (*is_netm(void))();
-#endif /* GROK_NETM */
-#ifdef GROK_TCPDUMP
-	int (*is_tcpdump(void))();
-#endif /* GROK_TCPDUMP */
-#ifdef GROK_ETHERPEEK
-	int (*is_EP(void))();
-#endif /* GROK_ETHERPEEK */
-
-
 /* install the is_GLORP() routines supported */
 struct supported_formats file_formats[] = {
 #ifdef GROK_TCPDUMP
@@ -93,5 +78,6 @@ struct supported_formats file_formats[] = {
 #ifdef GROK_NETM
 	{is_netm,	"netmetrix","Net Metrix -- Commercial program from HP"},
 #endif /* GROK_NETM */
-	{NULL,NULL},	/* You must NOT remove this entry */
 };
+
+#define NUM_FILE_FORMATS (sizeof(file_formats) / sizeof(struct supported_formats))

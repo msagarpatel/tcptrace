@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,25 +26,35 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.11 1997/09/05 19:17:30 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.20 1998/08/14 19:30:44 sdo Exp $";
 
 #include "tcptrace.h"
 
 
+/* info that I keep about each plotter */
+struct plotter_info {
+    MFILE *fplot;		/* the file that hold the plot */
+    tcb *p2plast;		/* the TCB that this goes with (if any) */
+    timeval zerotime;		/* first time stamp in this plot (see -z) */
+    char *filename;		/* redundant copy of name for debugging */
+};
+
+
+
 /* locally global parameters */
 static int max_plotters;
-static MFILE **fplot;
-static tcb **p2plast;
 static PLOTTER plotter_ix = NO_PLOTTER;
 static char *temp_color = NULL;
+static struct plotter_info *pplotters;
 
 
 /* local routine declarations */
-static char *xp_timestamp(struct timeval time);
+static char *xp_timestamp(PLOTTER pl, struct timeval time);
 static char *TSGPlotName(tcb *plast, PLOTTER, char *suffix);
 static void DoPlot(PLOTTER pl, char *fmt, ...);
+
 
 
 
@@ -56,15 +66,50 @@ static void DoPlot(PLOTTER pl, char *fmt, ...);
  */
 static char *
 xp_timestamp(
+    PLOTTER pl,
     struct timeval time)
 {
     static char bufs[4][20];	/* several of them for multiple calls in one printf */
     static int bufix = 0;
-    unsigned secs = time.tv_sec;
-    unsigned usecs = time.tv_usec;
-    unsigned decimal = usecs / 100;  /* just truncate, faster */
+    unsigned secs;
+    unsigned usecs;
+    unsigned decimal;
     char *pbuf;
 
+    /* see if we're graphing from "0" */
+    if (graph_time_zero) {
+	struct plotter_info *ppi = &pplotters[pl];
+
+	if (ZERO_TIME(&ppi->zerotime)) {
+	    /* set "zero point" */
+	    ppi->zerotime = time;
+	}
+
+	/* and subtract from the first timestamp */
+	time.tv_sec  -= ppi->zerotime.tv_sec;
+	time.tv_usec -= ppi->zerotime.tv_usec;
+	if (time.tv_usec < 0) {
+	    /* "borrow" */
+	    time.tv_sec -= 1;
+	    time.tv_usec += 1000000;
+	}
+
+	/* (in)sanity check */
+	if (time.tv_sec < 0) {
+	    fprintf(stderr,"Internal error in plotting (plot file '%s')...\n\
+ZERO-based X-axis plotting requested and elements are not plotted in\n\
+increasing time order.  Try without the '-z' flag\n",
+		    ppi->filename);
+/* 	    exit(-5); */
+	}
+    }
+
+    /* calculate time components */
+    secs = time.tv_sec;
+    usecs = time.tv_usec;
+    decimal = usecs / 100;  /* just truncate, faster */
+
+    /* use one of 4 rotating static buffers (for multiple calls per printf) */
     bufix = (bufix+1)%4;
     pbuf = bufs[bufix];
 
@@ -79,8 +124,7 @@ plot_init(void)
 {
     max_plotters = 256;  /* just a default, make more on the fly */
 
-    fplot = (MFILE **) MallocZ(max_plotters * sizeof(MFILE *));
-    p2plast = (tcb **) MallocZ(max_plotters * sizeof(tcb *));
+    pplotters = MallocZ(max_plotters * sizeof(struct plotter_info));
 }
 
 
@@ -94,12 +138,9 @@ plotter_makemore(void)
 		new_max_plotters);
 
     /* reallocate the memory to make more space */
-    fplot = ReallocZ(fplot,
-		     max_plotters * sizeof(MFILE *),
-		     new_max_plotters * sizeof(MFILE *));
-    p2plast = ReallocZ(p2plast,
-		       max_plotters * sizeof(tcb *),
-		       new_max_plotters * sizeof(tcb *));
+    pplotters = ReallocZ(pplotters,
+			 max_plotters * sizeof(struct plotter_info),
+			 new_max_plotters * sizeof(struct plotter_info));
 
     max_plotters = new_max_plotters;
 }
@@ -136,6 +177,14 @@ HostLetter(
 }
 
 
+char *
+NextHostLetter(void)
+{
+    static int count = 0;
+    return(HostLetter(count++));
+}
+
+
 
 static char *
 TSGPlotName(
@@ -161,6 +210,7 @@ DoPlot(
 {
     va_list	ap;
     MFILE *f = NULL;
+    struct plotter_info *ppi;
 
     va_start(ap,fmt);
 
@@ -177,7 +227,9 @@ DoPlot(
 	exit(-1);
     }
 
-    if ((f = fplot[pl]) == NULL) {
+    ppi = &pplotters[pl];
+
+    if ((f = ppi->fplot) == NULL) {
 	va_end(ap);
 	return;
     }
@@ -206,6 +258,7 @@ new_plotter(
 {
     PLOTTER pl;
     MFILE *f;
+    struct plotter_info *ppi;
 
     ++plotter_ix;
     if (plotter_ix >= max_plotters) {
@@ -213,6 +266,7 @@ new_plotter(
     }
 
     pl = plotter_ix;
+    ppi = &pplotters[pl];
 
     if (filename == NULL)
 	filename = TSGPlotName(plast,pl,suffix);
@@ -230,13 +284,23 @@ new_plotter(
 	return(NO_PLOTTER);
     }
 
-    Mfprintf(f,"timeval unsigned\n");
+    /* graph coordinates... */
+    /*  X coord is timeval unless graph_time_zero is true */
+    /*  Y is signed except when it's a sequence number */
+    /* ugly hack -- unsigned makes the graphs hard to work with and is
+       only needed for the time sequence graphs */
+    Mfprintf(f,"%s %s\n",
+	     graph_time_zero?"dtime":"timeval",
+	     ((strcmp(ylabel,"sequence number") == 0)&&(!graph_seq_zero))?
+	     "unsigned":"signed");
+
     Mfprintf(f,"title\n%s\n", title);
     Mfprintf(f,"xlabel\n%s\n", xlabel);
     Mfprintf(f,"ylabel\n%s\n", ylabel);
 
-    fplot[pl] = f;
-    p2plast[pl] = plast;
+    ppi->fplot = f;
+    ppi->p2plast = plast;
+    ppi->filename = strdup(filename);
 
     return(pl);
 }
@@ -250,14 +314,17 @@ plotter_done(void)
     char *fname;
 
     for (pl = 0; pl < plotter_ix; ++pl) {
-	if ((f = fplot[pl]) == NULL)
+	struct plotter_info *ppi = &pplotters[pl];
+	
+	if ((f = ppi->fplot) == NULL)
 	    continue;
 	
-	if (!ignore_non_comp || ConnComplete(p2plast[pl]->ptp)) {
+	if (!ignore_non_comp ||
+	    ((ppi->p2plast != NULL) && (ConnComplete(ppi->p2plast->ptp)))) {
 	    Mfprintf(f,"go\n");
 	    Mfclose(f);
 	} else {
-	    fname = p2plast[pl]->tsg_plotfile;
+	    fname = ppi->p2plast->tsg_plotfile;
 	    if (debug)
 		fprintf(stderr,"Removing incomplete plot file '%s'\n",
 			fname);
@@ -299,8 +366,8 @@ plotter_line(
     u_long		x2)
 {
     DoPlot(pl,"line %s %u %s %u",
-	   xp_timestamp(t1), x1,
-	   xp_timestamp(t2), x2);
+	   xp_timestamp(pl,t1), x1,
+	   xp_timestamp(pl,t2), x2);
 }
 
 
@@ -313,8 +380,8 @@ plotter_dline(
     u_long		x2)
 {
     DoPlot(pl,"dline %s %u %s %u",
-           xp_timestamp(t1), x1,
-           xp_timestamp(t2), x2);
+           xp_timestamp(pl,t1), x1,
+           xp_timestamp(pl,t2), x2);
 }
 
 
@@ -324,7 +391,7 @@ plotter_diamond(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"diamond %s %u", xp_timestamp(t), x);
+    DoPlot(pl,"diamond %s %u", xp_timestamp(pl,t), x);
 }
 
 
@@ -334,7 +401,7 @@ plotter_dot(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"dot %s %u", xp_timestamp(t), x);
+    DoPlot(pl,"dot %s %u", xp_timestamp(pl,t), x);
 }
 
 
@@ -344,7 +411,7 @@ plotter_plus(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"plus %s %u", xp_timestamp(t), x);
+    DoPlot(pl,"plus %s %u", xp_timestamp(pl,t), x);
 }
 
 
@@ -354,7 +421,7 @@ plotter_box(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"box %s %u", xp_timestamp(t), x);
+    DoPlot(pl,"box %s %u", xp_timestamp(pl,t), x);
 }
 
 
@@ -366,7 +433,7 @@ plotter_arrow(
     u_long		x,
     char	dir)
 {
-    DoPlot(pl,"%carrow %s %u", dir, xp_timestamp(t), x);
+    DoPlot(pl,"%carrow %s %u", dir, xp_timestamp(pl,t), x);
 }
 
 
@@ -417,7 +484,7 @@ plotter_tick(
     u_long		x,
     char		dir)
 {
-    DoPlot(pl,"%ctick %s %u", dir, xp_timestamp(t), x);
+    DoPlot(pl,"%ctick %s %u", dir, xp_timestamp(pl,t), x);
 }
 
 
@@ -490,7 +557,7 @@ plotter_text(
     char		*where,
     char		*str)
 {
-    DoPlot(pl,"%stext %s %u", where, xp_timestamp(t), x);
+    DoPlot(pl,"%stext %s %u", where, xp_timestamp(pl,t), x);
     /* fix by Bill Fenner - Wed Feb  5, 1997, thanks */
     /* This is a little ugly.  Text commands take 2 lines. */
     /* A temporary color could have been */
