@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.21 1997/08/22 20:15:47 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.23 1997/09/05 16:02:42 sdo Exp $";
 
 
 #include "config.h"
@@ -79,6 +79,7 @@ typedef struct in_addr ipaddr;
 
 /* type for a timestamp */
 typedef struct timeval timeval;
+#define ZERO_TIME(ptv)(((ptv)->tv_sec == 0) && ((ptv)->tv_usec == 0))
 
 /* type for a Boolean */
 typedef u_char Bool;
@@ -350,7 +351,7 @@ char *ServiceName(portnum);
 char *HostName(ipaddr);
 char *HostLetter(u_int);
 char *EndpointName(ipaddr,portnum);
-PLOTTER new_plotter(tcb *plast, char *title,
+PLOTTER new_plotter(tcb *plast, char *filename, char *title,
 		    char *xlabel, char *ylabel, char *suffix);
 int rexmit(tcb *, seqnum, seglen, Bool *);
 void ack_in(tcb *, seqnum);

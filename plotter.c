@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.9 1997/03/04 18:11:21 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.11 1997/09/05 19:17:30 sdo Exp $";
 
 #include "tcptrace.h"
 
@@ -198,6 +198,7 @@ DoPlot(
 PLOTTER
 new_plotter(
     tcb *plast,
+    char *filename,	/* if NULL, use default name from plast */
     char *title,
     char *xlabel,
     char *ylabel,
@@ -205,7 +206,6 @@ new_plotter(
 {
     PLOTTER pl;
     MFILE *f;
-    char *filename;
 
     ++plotter_ix;
     if (plotter_ix >= max_plotters) {
@@ -214,7 +214,13 @@ new_plotter(
 
     pl = plotter_ix;
 
-    filename = TSGPlotName(plast,pl,suffix);
+    if (filename == NULL)
+	filename = TSGPlotName(plast,pl,suffix);
+    else if (suffix != NULL) {
+	char buf[100];
+	sprintf(buf,"%s%s", filename, suffix);
+	filename = buf;
+    }
 
     if (debug)
 	fprintf(stderr,"Plotter %d file is '%s'\n", pl, filename);

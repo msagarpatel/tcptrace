@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.7 1997/07/14 20:58:28 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.8 1997/09/05 16:02:22 sdo Exp $";
 
 
 /* 
@@ -579,7 +579,7 @@ graph_rtt_sample(
     if (ptcb->rtt_plotter == (PLOTTER) NULL) {
 	sprintf(title,"%s_==>_%s (rtt samples)",
 		ptcb->ptp->a_endpoint, ptcb->ptp->b_endpoint);
-	ptcb->rtt_plotter = new_plotter(ptcb,title,
+	ptcb->rtt_plotter = new_plotter(ptcb,NULL,title,
 					"time","rtt (ms)",
 					RTT_GRAPH_FILE_EXTENSION);
 	plotter_perm_color(ptcb->rtt_plotter,"red");

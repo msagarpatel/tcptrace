@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.13 1997/08/22 20:18:21 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.15 1997/09/05 19:17:55 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -236,12 +236,12 @@ NewTTP(
 	if (!ignore_non_comp || (SYN_SET(ptcp))) {
 	    sprintf(title,"%s_==>_%s (time sequence graph)",
 		    ptp->a_endpoint, ptp->b_endpoint);
-	    ptp->a2b.tsg_plotter = new_plotter(&ptp->a2b,title,
+	    ptp->a2b.tsg_plotter = new_plotter(&ptp->a2b,NULL,title,
 					       "time","sequence number",
 					       PLOT_FILE_EXTENSION);
 	    sprintf(title,"%s_==>_%s (time sequence graph)",
 		    ptp->b_endpoint, ptp->a_endpoint);
-	    ptp->b2a.tsg_plotter = new_plotter(&ptp->b2a,title,
+	    ptp->b2a.tsg_plotter = new_plotter(&ptp->b2a,NULL,title,
 					       "time","sequence number",
 					       PLOT_FILE_EXTENSION);
 	}
@@ -1053,6 +1053,13 @@ ExtractContents(
 
     if (saved_data_bytes == 0)
 	return;
+
+    /* if we haven't (didn't) seen the SYN, then can't do this!! */
+    if (ptcb->syn_count == 0) {
+	if (debug>1)
+	    fprintf(stderr,"ExtractContents: skipping data, didn't see SYN\n");
+	return;
+    }
     
     /* how many bytes do we have? */
     missing = tcp_data_bytes - saved_data_bytes;
@@ -1105,7 +1112,7 @@ ExtractContents(
     /* see where we are */
     fptr = Mftell(ptcb->extracted_contents_file);
 
-    if (debug)
+    if (debug>1)
 	fprintf(stderr,"Saving %ld bytes from stream '%s2%s' at offset %ld in file '%s'\n",
 		saved_data_bytes,
 		ptcb->host_letter, ptcb->ptwin->host_letter,

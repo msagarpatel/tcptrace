@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1997 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "$Id: compress.c,v 1.1 1997/08/22 20:17:24 sdo Exp $";
+    "$Id: compress.c,v 1.2 1997/09/05 19:18:26 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -136,6 +136,8 @@ WhichFormat(
 	    return(pf);
 	}
     }
+
+    pf = NULL;
 
     if (debug)
 	fprintf(stderr,"WhichFormat: failed to find compression format for file '%s'\n",
@@ -398,7 +400,7 @@ void
 CompCloseFile(
     char *filename)
 {
-    fclose(stdin);
+/*     fclose(stdin); */
 
     /* in case we have a child still in the background */
     wait(0);

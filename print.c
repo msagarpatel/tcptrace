@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.11 1997/08/22 20:16:15 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.12 1997/09/04 21:46:38 sdo Exp $";
 
 
 /* 
@@ -57,7 +57,7 @@ ts2ascii(
 	char *now;
 	int decimal;
 
-	if ((ptime->tv_sec == 0) && (ptime->tv_usec == 0))
+	if (ZERO_TIME(ptime))
 	    return("        <the epoch>       ");
 
 	ptm = localtime(&ptime->tv_sec);

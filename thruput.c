@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.5 1997/03/04 18:13:17 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.6 1997/09/05 16:02:35 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -54,7 +54,7 @@ DoThru(
 	/* create the plotter file */
 	sprintf(title,"%s_==>_%s (throughput)",
 		ptcb->ptp->a_endpoint, ptcb->ptp->b_endpoint);
-	ptcb->thru_plotter = new_plotter(ptcb,title,
+	ptcb->thru_plotter = new_plotter(ptcb,NULL,title,
 					 "time","thruput (bytes/sec)",
 					 THROUGHPUT_FILE_EXTENSION);
 
