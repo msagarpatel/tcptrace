@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.4 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.5 1997/03/04 18:13:17 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -39,7 +39,7 @@ DoThru(
     tcb *ptcb,
     int nbytes)
 {
-    u_long etime;
+    double etime;
     double thruput;
 
     /* init, if not already done */

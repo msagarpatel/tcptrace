@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/mfiles.c,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/mfiles.c,v 3.4 1997/03/05 06:23:08 sdo Exp $";
 
 
 /* 
@@ -243,7 +243,7 @@ M_printlru(void)
 	fprintf(stderr,"%s ==> ", pmf->fname);
     fprintf(stderr,"NULL \n");
 }
-#endif OLD
+#endif /* OLD */
 
 
 static void

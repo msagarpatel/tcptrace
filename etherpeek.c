@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.5 1997/03/05 06:23:33 sdo Exp $";
 
 
 /****************************************
@@ -174,7 +174,12 @@ pread_EP(
 	ptime->tv_sec  = mactime + (hdr3.timestamp / 1000); /*milliseconds div 1000*/
 	ptime->tv_usec = 1000 * (hdr3.timestamp % 1000);
 	*plen          = hdr.packetLength;
-	*ptlen         = hdr.sliceLength;
+	/* hmmm... I guess 0 bytes means that they grabbed the whole */
+	/* packet.  Seems to work that way... sdo - Thu Feb 13, 1997 */
+	if (hdr.sliceLength)
+	    *ptlen = hdr.sliceLength;
+	else
+	    *ptlen = hdr.packetLength;
 
 	*ppip  = (struct ip *) pip_buf;
 	*pphys  = pep;
@@ -247,4 +252,4 @@ int (*is_EP(void))()
     return(pread_EP);
 }
 
-#endif GROK_ETHERPEEK
+#endif /* GROK_ETHERPEEK */

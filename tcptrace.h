@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.7 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.12 1997/03/05 06:25:47 sdo Exp $";
 
 
 #include "config.h"
@@ -50,8 +50,6 @@ static char const rcsid_tcptrace[] =
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <stdlib.h>
-
-
 
 /* type for plotting into a file */
 typedef int PLOTTER;
@@ -223,6 +221,9 @@ struct stcp_pair {
     /* are we ignoring this one?? */
     Bool		ignore_pair;
 
+    /* inactive (previous instance of current connection */
+    Bool		inactive;
+
     /* endpoint identification */
     tcp_pair_addrblock	addr_pair;
 
@@ -243,10 +244,6 @@ typedef struct stcp_pair tcp_pair;
 typedef struct tcphdr tcphdr;
 
 
-/* maximum number of TCP pairs to maintain */
-#define DEFAULT_MAX_TCP_PAIRS 1024
-extern int max_tcp_pairs;
-
 extern int num_tcp_pairs;	/* how many pairs are in use */
 extern tcp_pair **ttp;		/* array of pointers to allocated pairs */
 
@@ -264,6 +261,7 @@ extern Bool print_rtt;
 extern Bool printbrief;
 extern Bool printem;
 extern Bool printticks;
+extern Bool printtrunc;
 extern Bool show_out_order;
 extern Bool show_rexmit;
 extern Bool show_zero_window;
@@ -272,6 +270,7 @@ extern int debug;
 extern int thru_interval;
 extern int pnum;
 
+extern int ctrunc;
 extern timeval current_time;
 
 
@@ -281,14 +280,17 @@ extern timeval current_time;
 /* external routine decls */
 double sqrt(double x);
 char *ether_ntoa();
+#ifndef I386_NBSD1
 void bzero(void *, int);
 void bcopy(void *, void *,int);
+#endif
 void free(void *);
 int finite(double);
 
 
 /* global routine decls */
 void *MallocZ(int);
+void *ReallocZ(void *oldptr, int obytes, int nbytes);
 void trace_init(void);
 void trace_done(void);
 void seglist_init(tcb *);
@@ -315,12 +317,12 @@ void plotter_darrow(PLOTTER, timeval, u_long);
 void plotter_box(PLOTTER, timeval, u_long);
 void plotter_arrow(PLOTTER, timeval, u_long, char);
 void plot_init(void);
-void dotrace(int, struct ip *);
+void dotrace(struct ip *, void *plast);
 void PrintTrace(tcp_pair *);
 void PrintBrief(tcp_pair *);
 void OnlyConn(int);
 void IgnoreConn(int);
-u_long elapsed(timeval, timeval);
+double elapsed(timeval, timeval);
 int ConnReset(tcp_pair *);
 int ConnComplete(tcp_pair *);
 char *ts2ascii(timeval *);
@@ -339,7 +341,7 @@ int Mvfprintf(MFILE *pmf, char *format, va_list ap);
 int Mfclose(MFILE *pmf);
 int Mfflush(MFILE *pmf);
 void Minit(void);
-struct tcp_options *ParseOptions(struct tcphdr *ptcp,int plen);
+struct tcp_options *ParseOptions(struct tcphdr *ptcp, void *plast);
 
 
 /* TCP flags macros */
@@ -375,7 +377,7 @@ struct tcp_options *ParseOptions(struct tcphdr *ptcp,int plen);
 
 /* physical layers currently understood					*/
 #define PHYS_ETHER	1
-
+#define PHYS_FDDI       2
 
 /*
  * SEQCMP - sequence space comparator
@@ -426,3 +428,16 @@ struct tcp_options {
 #define RTT_GRAPH_FILE_EXTENSION	"_rtt.xpl"
 #define PLOT_FILE_EXTENSION		"_tsg.xpl"
 #define THROUGHPUT_FILE_EXTENSION	"_tput.xpl"
+
+
+/*
+ * fixes for various systems that aren't exactly like Solaris
+ */
+#ifndef IP_MAXPACKET
+#define IP_MAXPACKET 65535
+#endif /* IP_MAXPACKET */
+
+#ifndef ETHERTYPE_REVARP
+#define ETHERTYPE_REVARP        0x8035
+#endif /* ETHERTYPE_REVARP */
+

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.5 1997/03/05 07:25:11 sdo Exp $";
 
 
 /* 
@@ -85,6 +85,12 @@ pread_snoop(
 	    return(0);
 	}
 
+	/* convert some stuff to host byte order */
+	hdr.tlen = ntohl(hdr.tlen);
+	hdr.len = ntohl(hdr.len);
+	hdr.secs = ntohl(hdr.secs);
+	hdr.usecs = ntohl(hdr.usecs);
+
 	packlen = hdr.tlen;
 	/* round up to multiple of 4 bytes */
 	len = (packlen + 3) & ~0x3;
@@ -117,7 +123,7 @@ pread_snoop(
 	*pphystype = PHYS_ETHER;
 
 	/* if it's not TCP/IP, then skip it */
-	if ((pep->ether_type != ETHERTYPE_IP) ||
+	if ((ntohs(pep->ether_type) != ETHERTYPE_IP) ||
 	    ((*ppip)->ip_p != IPPROTO_TCP))
 	    continue;
 
@@ -160,7 +166,4 @@ int (*is_snoop(void))()
 
     return(pread_snoop);
 }
-#endif GROK_SNOOP
-
-
-
+#endif /* GROK_SNOOP */

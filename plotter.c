@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.5 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.9 1997/03/04 18:11:21 sdo Exp $";
 
 #include "tcptrace.h"
 
@@ -77,45 +77,60 @@ xp_timestamp(
 void
 plot_init(void)
 {
-    max_plotters = 4*max_tcp_pairs;
+    max_plotters = 256;  /* just a default, make more on the fly */
 
     fplot = (MFILE **) MallocZ(max_plotters * sizeof(MFILE *));
     p2plast = (tcb **) MallocZ(max_plotters * sizeof(tcb *));
 }
 
 
+static void
+plotter_makemore(void)
+{
+    int new_max_plotters = max_plotters * 4;
 
+    if (debug)
+	fprintf(stderr,"plotter: making more space for %d total plotters\n",
+		new_max_plotters);
+
+    /* reallocate the memory to make more space */
+    fplot = ReallocZ(fplot,
+		     max_plotters * sizeof(MFILE *),
+		     new_max_plotters * sizeof(MFILE *));
+    p2plast = ReallocZ(p2plast,
+		       max_plotters * sizeof(tcb *),
+		       new_max_plotters * sizeof(tcb *));
+
+    max_plotters = new_max_plotters;
+}
+
+
+
+
+/* max number of letters in endpoint name */
+/* (8 allows 26**8 different endpoints (209,000,000,000)
+    probably plenty for now!!!!!) */
+#define MAX_HOSTLETTER_LEN 8
 char *
 HostLetter(
-     u_int ix)
+     unsigned ix)
 {
-    static char name[10];
-    char ch1;
-    char ch2;
-    char ch3;
+    static char name[MAX_HOSTLETTER_LEN+1];
+    static char *pname;
 
-    if (ix < 26) {
-        ch1 = ix % 26;
-        sprintf(name,"%c", 'a' + ch1);
-        return(name);
-    }
-    ix -= 26;
-    if (ix < 26*26) {
-        ch1 = ix % 26;
-        ch2 = (ix/26) % 26;
-        sprintf(name,"%c%c", 'a' + ch2, 'a' + ch1);
-        return(name);
-    }
-    ix -= (26*26);
-    if (ix < 26*26*26) {
-        ch1 = ix % 26;
-        ch2 = (ix/26) % 26;
-        ch3 = (ix/(26*26)) % 26;
-        sprintf(name,"%c%c%c", 'a' + ch3, 'a' + ch2, 'a' + ch1);
-        return(name);
+    /* basically, just convert to base 26 */
+    pname = &name[sizeof(name)-1];
+    *pname-- = '\00';
+    while (pname >= name) {
+	unsigned digit = ix % 26;
+	*pname-- = 'a'+digit;
+	ix = ix / 26;
+	if (ix == 0)
+	    return(pname+1);
     }
 
-    fprintf(stderr,"Fatal, too many hosts to name\n");
+    fprintf(stderr,"Fatal, too many hosts to name (max length %d)\n",
+	    MAX_HOSTLETTER_LEN);
     exit(-1);
     return(NULL);  /* NOTREACHED */
 }
@@ -152,16 +167,20 @@ DoPlot(
 /*     if (!graph_tsg) */
 /* 	return; */
 
-    if (pl == NO_PLOTTER)
+    if (pl == NO_PLOTTER) {
+	va_end(ap);
 	return;
+    }
 
     if (pl > plotter_ix) {
 	fprintf(stderr,"Illegal plotter: %d\n", pl);
 	exit(-1);
     }
 
-    if ((f = fplot[pl]) == NULL)
+    if ((f = fplot[pl]) == NULL) {
+	va_end(ap);
 	return;
+    }
 
     Mvfprintf(f,fmt,ap);
     if (temp_color) {
@@ -190,8 +209,7 @@ new_plotter(
 
     ++plotter_ix;
     if (plotter_ix >= max_plotters) {
-	fprintf(stderr,"No more plotters\n");
-	return(NO_PLOTTER);
+	plotter_makemore();
     }
 
     pl = plotter_ix;
@@ -466,5 +484,12 @@ plotter_text(
     char		*where,
     char		*str)
 {
-    DoPlot(pl,"%stext %s %u\n%s", where, xp_timestamp(t), x, str);
+    DoPlot(pl,"%stext %s %u", where, xp_timestamp(t), x);
+    /* fix by Bill Fenner - Wed Feb  5, 1997, thanks */
+    /* This is a little ugly.  Text commands take 2 lines. */
+    /* A temporary color could have been */
+    /* inserted after that line, but would NOT be inserted after */
+    /* the next line, so we'll be OK.  I can't think of a better */
+    /* way right now, and this works fine (famous last words) */
+    DoPlot(pl,"%s", str);
 }

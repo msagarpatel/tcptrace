@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rtt.c,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rtt.c,v 3.4 1997/03/04 18:13:00 sdo Exp $";
 
 
 /* 
@@ -86,7 +86,7 @@ ack_in(
     struct tcphdr *ptcp,
     struct ip *pip)
 {
-    unsigned long etime;
+    double etime;
     unsigned ack = ntohl(ptcp->th_ack);
     seg_rec *pseg;
     int found = 0;
@@ -116,7 +116,7 @@ ack_in(
 		    ptcb->rtt_max = etime;
 
 		ptcb->rtt_sum += etime;
-		ptcb->rtt_sum2 += (double)etime * (double)etime;
+		ptcb->rtt_sum2 += etime * etime;
 		++ptcb->rtt_count;
 	    } else {
 		/* retrans, can't use it */

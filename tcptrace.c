@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.c,v 3.7 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.c,v 3.13 1997/03/05 06:25:23 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -62,10 +62,12 @@ Bool print_rtt = FALSE;
 Bool printbrief = TRUE;
 Bool printem = FALSE;
 Bool printticks = FALSE;
+Bool printtrunc = FALSE;
 int debug = 0;
 u_long beginpnum = 0;
 u_long endpnum = ~0;
 int pnum = 0;
+int ctrunc = 0;
 
 /* globals */
 struct timeval current_time;
@@ -104,15 +106,15 @@ Connection filtering options\n\
   -BN     first segment number to analyze (default 1)\n\
   -EN     last segment number to analyze (default last in file)\n\
 Graphing detail options\n\
-  -C      produce color plot[s] (modified xplot needed)\n\
+  -C      produce color plot[s]\n\
   -M      produce monochrome (b/w) plot[s]\n\
   -AN     Average N segments for throughput graphs, default is 10\n\
 Misc options\n\
   -Z      dump raw rtt sample times to file[s]\n\
   -p      print individual packet contents (can be very long)\n\
   -t      'tick' off the packet numbers as a progress indication\n\
-  -mN     max TCP pairs to keep\n\
   -v      print version information and exit\n\
+  -w      print warning message when packets are too short to process\n\
   -d      whistle while you work (enable debug, use -d -d for more output)\n\
   +[v]    reverse the setting of the -[v] flag (for booleans)\n\
 ");
@@ -212,6 +214,7 @@ ProcessFile(void)
     int fix;
     int len;
     int tlen;
+    void *plast;
 
 
     /* determine which input file format it is... */
@@ -295,6 +298,25 @@ ProcessFile(void)
 	    continue;
 	}
 
+	/* another sanity check, only understand ETHERNET right now */
+	if (phystype != PHYS_ETHER) {
+	    static int not_ether = 0;
+
+	    ++not_ether;
+	    if (not_ether == 5) {
+		fprintf(stderr,
+			"More non-ethernet packets skipped (last warning)\n");
+		fprintf(stderr, "\n\
+If you'll send me a trace and offer to help, I can add support\n\
+for other packet types, I just don't have a place to test them\n\n");
+	    } else if (not_ether < 5) {
+		fprintf(stderr,
+			"Skipping packet %d, not an ethernet packet\n",
+			pnum);
+	    } /* else, just shut up */
+	    continue;
+	}
+
 	/* print the packet, if requested */
 	if (printem) {
 	    printf("Packet %d\n", pnum);
@@ -307,7 +329,10 @@ ProcessFile(void)
 	    continue;
 
         /* perform packet analysis */
-	dotrace(len,pip);
+	plast = (void *)((unsigned)pip + tlen - 1);
+	if (phystype == PHYS_ETHER)
+	    plast = (void *)((u_int)plast - sizeof(struct ether_header));
+	dotrace(pip,plast);
 
 	/* for efficiency, only allow a signal every 1000 packets	*/
 	/* (otherwise the system call overhead will kill us)		*/
@@ -322,10 +347,22 @@ ProcessFile(void)
 	    sigprocmask(SIG_BLOCK, &mask, NULL);
 	}
     }
+
+    /* set ^C back to the default */
+    /* (so we can kill the output if needed) */
+    {
+	sigset_t mask;
+
+	sigemptyset(&mask);
+	sigaddset(&mask,SIGINT);
+
+	sigprocmask(SIG_UNBLOCK, &mask, NULL);
+	signal(SIGINT,SIG_DFL);
+    }
 }
 
 
-void
+static void
 QuitSig(
     int signum)
 {
@@ -350,6 +387,26 @@ MallocZ(
 		exit(2);
 	}
 	bzero(ptr,nbytes);
+
+	return(ptr);
+}
+
+void *
+ReallocZ(
+    void *oldptr,
+    int obytes,
+    int nbytes)
+{
+	char *ptr;
+
+	ptr = realloc(oldptr,nbytes);
+	if (ptr == NULL) {
+		perror("Realloc failed, fatal\n");
+		exit(2);
+	}
+	if (obytes < nbytes) {
+	    bzero((char *)ptr+obytes,nbytes-obytes);
+	}
 
 	return(ptr);
 }
@@ -391,6 +448,7 @@ ParseArgs(
 
 		  case 'd': ++debug; break;
 		  case 'v': Version(); exit(0); break;
+		  case 'w': printtrunc = TRUE; break;
 		  case 'i':
 		    ++saw_i_or_o;
 		    IgnoreConn(atoi(argv[i]+1));
@@ -413,18 +471,10 @@ ParseArgs(
 		    }
 		    *(argv[i]+1) = '\00'; break;
 		  case 'm':
-		    max_tcp_pairs = atoi(argv[i]+1);
-		    if (max_tcp_pairs <= 0) {
-			fprintf(stderr, "-m  must be > 0\n");
-			Usage(argv[0]);
-		    }
-		    if (saw_i_or_o) {
-			/* too late, the table was already made for some */
-			/* other argument to work */
-			fprintf(stderr, "-m MUST preceed all '-iN' and '-oM' options\n");
-			Usage(argv[0]);
-		    }
+		    fprintf(stderr,
+			    "-m option is obsolete (no longer necessary)\n");
 		    *(argv[i]+1) = '\00'; break;
+		    break;
 		  default:
 		    fprintf(stderr, "option '%c' not understood\n", *argv[i]);
 		    Usage(argv[0]);
@@ -452,6 +502,7 @@ ParseArgs(
 		  case 'r': print_rtt = !TRUE; break;
 		  case 's': use_short_names = !TRUE; break;
 		  case 't': printticks = !TRUE; break;
+		  case 'w': printtrunc = !TRUE; break;
 		  default:
 		    Usage(argv[0]);
 		}
@@ -474,6 +525,7 @@ static void
 DumpFlags(void)
 {
 	fprintf(stderr,"printbrief:       %d\n", printbrief);
+	fprintf(stderr,"printtrunc:       %d\n", printtrunc);
 	fprintf(stderr,"print_rtt:        %d\n", print_rtt);
 	fprintf(stderr,"graph tsg:        %d\n", graph_tsg);
 	fprintf(stderr,"graph rtt:        %d\n", graph_rtt);
@@ -489,7 +541,6 @@ DumpFlags(void)
 	fprintf(stderr,"show_rexmit:      %d\n", show_rexmit);
 	fprintf(stderr,"show_zero_window: %d\n", show_zero_window);
 	fprintf(stderr,"show_out_order:	  %d\n", show_out_order);
-	fprintf(stderr,"max connections:  %d\n", max_tcp_pairs);
 	fprintf(stderr,"beginning pnum:   %lu\n", beginpnum);
 	fprintf(stderr,"ending pnum:      %lu\n", endpnum);
 	fprintf(stderr,"throughput intvl: %d\n", thru_interval);

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.4 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.6 1997/03/04 18:13:51 sdo Exp $";
 
 
 /* 
@@ -67,7 +67,7 @@ static int addseg(tcb *, quadrant *, seglen, seqnum, Bool *);
 static void rtt_retrans(tcb *, segment *);
 static void rtt_ackin(tcb *, segment *);
 static void freequad(quadrant **);
-static void dump_rtt_sample(tcb *, segment *, unsigned long);
+static void dump_rtt_sample(tcb *, segment *, double);
 static void graph_rtt_sample(tcb *, segment *, unsigned long);
 
 
@@ -118,7 +118,7 @@ int rexmit(
 
 
 /********************************************************************/
-int
+static int
 addseg(
     tcb *ptcb,
     quadrant *pquad,
@@ -211,7 +211,7 @@ addseg(
 
 
 /**********************************************************************/
-segment *
+static segment *
 create_seg(
     seqnum seq,
     seglen len)
@@ -228,7 +228,7 @@ create_seg(
 }
 
 /**********************************************************************/
-quadrant *
+static quadrant *
 create_quadrant(void)
 {
     quadrant *pquad;
@@ -240,7 +240,7 @@ create_quadrant(void)
 
 /********************************************************************/
 
-quadrant *
+static quadrant *
 whichquad(
     seqspace *sspace,
     seqnum seq)
@@ -298,7 +298,8 @@ whichquad(
 
 
 /*********************************************************************/
-void collapse_quad(
+static void
+collapse_quad(
     quadrant *pquad)
 {
     Bool freed;
@@ -380,7 +381,7 @@ rtt_ackin(
     tcb *ptcb,
     segment *pseg)
 {
-    unsigned long etime_rtt;
+    double etime_rtt;
 
     /* how long did it take */
     etime_rtt = elapsed(pseg->time,current_time);
@@ -393,7 +394,7 @@ rtt_ackin(
 	    ptcb->rtt_max = etime_rtt;
 
 	ptcb->rtt_sum += etime_rtt;
-	ptcb->rtt_sum2 += (double)etime_rtt * (double)etime_rtt;
+	ptcb->rtt_sum2 += etime_rtt * etime_rtt;
 	++ptcb->rtt_count;
     } else {
 	/* retrans, can't use it */
@@ -404,7 +405,7 @@ rtt_ackin(
 	    ptcb->rtt_max_last = etime_rtt;
 
 	ptcb->rtt_sum_last += etime_rtt;
-	ptcb->rtt_sum2_last += (double)etime_rtt * (double)etime_rtt;
+	ptcb->rtt_sum2_last += etime_rtt * etime_rtt;
 	++ptcb->rtt_count_last;
 
 	++ptcb->rtt_amback;  /* ambiguous ACK */
@@ -428,7 +429,7 @@ rtt_retrans(
     tcb *ptcb,
     segment *pseg)
 {
-    u_long etime;
+    double etime;
 
     if (!pseg->acked) {
 	/* if it was acked, then it's been collapsed and these */
@@ -443,7 +444,7 @@ rtt_retrans(
 	    ptcb->retr_min_tm = etime;
 
 	ptcb->retr_tm_sum += etime;
-	ptcb->retr_tm_sum2 += (double)etime*(double)etime;
+	ptcb->retr_tm_sum2 += etime*etime;
 	++ptcb->retr_tm_count;
     }
 
@@ -531,7 +532,7 @@ static void
 dump_rtt_sample(
     tcb *ptcb,
     segment *pseg,
-    unsigned long etime_rtt)
+    double etime_rtt)
 {
     /* if the FILE is "-1", couldn't open file */
     if (ptcb->rtt_dump_file == (MFILE *) -1) {

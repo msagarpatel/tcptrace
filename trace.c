@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.5 1996/12/04 15:51:11 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.10 1997/03/05 06:24:56 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -40,16 +40,14 @@ static int packet_count = 0;
 static int search_count = 0;
 static Bool *ignore_pairs = NULL;/* which ones will we ignore */
 static Bool bottom_letters = 0;
+static Bool more_conns_ignored = FALSE;
 
 
 
 /* provided globals  */
 int num_tcp_pairs = -1;	/* how many pairs we've allocated */
 tcp_pair **ttp = NULL;	/* array of pointers to allocated pairs */
-int max_tcp_pairs = DEFAULT_MAX_TCP_PAIRS;
-/* this global is important, because several other functions (in other	*/
-/* files) depend on it for bounds checking.  It can be fairly large	*/
-/* by default, but we must depend on it.				*/
+int max_tcp_pairs = 64; /* initial value, automatically increases */
 
 
 /* local routine definitions */
@@ -58,6 +56,7 @@ static int WhichDir(tcp_pair_addrblock *, tcp_pair_addrblock *);
 static int SameConn(tcp_pair_addrblock *, tcp_pair_addrblock *, int *);
 static tcp_pair *NewTTP(struct ip *, struct tcphdr *);
 static tcp_pair *FindTTP(struct ip *, struct tcphdr *, int *);
+static void MoreTcpPairs(int num_needed);
 
 
 
@@ -86,7 +85,8 @@ char *synfin_color	= "orange";
 
 
 /* return elapsed time in microseconds */
-unsigned long
+/* (time2 - time1) */
+double
 elapsed(
     struct timeval time1,
     struct timeval time2)
@@ -99,7 +99,7 @@ elapsed(
 	etime.tv_sec  -= 1;
 	etime.tv_usec += 1000000;
     }
-    return(etime.tv_sec * 1000000 + etime.tv_usec);
+    return((double)etime.tv_sec * 1000000 + (double)etime.tv_usec);
 }
 
 
@@ -150,7 +150,7 @@ WhichDir(
 	    if ((ptpa1->a_port == ptpa2->b_port))
 		if ((ptpa1->b_port == ptpa2->a_port))
 		    return(B2A);
-#else BROKEN_COMPILER
+#else /* BROKEN_COMPILER */
     /* same as first packet */
     if (IP_SAMEADDR(ptpa1->a_address, ptpa2->a_address) &&
 	IP_SAMEADDR(ptpa1->b_address, ptpa2->b_address) &&
@@ -164,7 +164,7 @@ WhichDir(
 	(ptpa1->a_port == ptpa2->b_port) &&
 	(ptpa1->b_port == ptpa2->a_port))
 	return(B2A);
-#endif BROKEN_COMPILER
+#endif /* BROKEN_COMPILER */
 
     /* different connection */
     return(0);
@@ -198,15 +198,7 @@ NewTTP(
 
     /* make a new one, if possible */
     if ((num_tcp_pairs+1) >= max_tcp_pairs) {
-	static Bool warned = FALSE;
-
-	if (!warned) {
-	    warned = TRUE;
-	    fprintf(stderr,"WARNING: only %d connections traced, see '-mN' option",
-		    max_tcp_pairs);
-	    fprintf(stderr,"  (may hurt performance!)\n");
-	}
-	return(NULL);
+	MoreTcpPairs(num_tcp_pairs+1);
     }
 
     /* create a new TCP pair record and remember where you put it */
@@ -292,6 +284,36 @@ FindTTP(
     for (ptp = *pptp_head; ptp; ptp=ptp->next) {
 	++search_count;
 	if (SameConn(&tp_in.addr_pair,&ptp->addr_pair,&dir)) {
+	    /* check for "inactive" */
+	    if (ptp->inactive)
+		continue;
+
+	    /* check for NEW connection on these same endpoints */
+	    /* 1) At least 4 minutes idle time */
+	    /*  AND */
+	    /* 2) heuristic (we might miss some) either: */
+	    /*    this packet has a SYN */
+	    /*    last conn saw both FINs */
+	    /* if so, mark it INACTIVE and skip from now on */
+	    if (elapsed(ptp->last_time,current_time)/1000000 > (4*60)) {
+		if ((SYN_SET(ptcp)) ||
+		    ((ptp->a2b.fin_count >= 1) &&
+		     (ptp->b2a.fin_count >= 1))) {
+		    if (debug) {
+			printf("%s: Marking 0x%08x %s<->%s INACTIVE (idle: %f sec)\n",
+			       ts2ascii(&current_time),
+			       (unsigned) ptp,
+			       ptp->a_endpoint, ptp->b_endpoint,
+			       elapsed(ptp->last_time,
+				       current_time)/1000000);
+			if (debug > 1)
+			    PrintTrace(ptp);
+		    }
+		    ptp->inactive = TRUE;
+		    continue;
+		}
+	    }
+
 	    /* move to head of access list (unless already there) */
 	    if (ptp != *pptp_head) {
 		ptp_last->next = ptp->next; /* unlink */
@@ -321,8 +343,8 @@ FindTTP(
 
 void
 dotrace(
-    int len,
-    struct ip *pip)
+    struct ip *pip,
+    void *plast)
 {
     struct tcphdr	*ptcp;
     struct tcp_options *ptcpo;
@@ -344,6 +366,15 @@ dotrace(
     /* find the start of the TCP header */
     ptcp = (struct tcphdr *) ((char *)pip + 4*pip->ip_hl);
 
+    /* make sure we have enough of the packet */
+    if ((unsigned)ptcp + sizeof(struct tcphdr)-1 > (unsigned)plast) {
+	if (printtrunc)
+	    fprintf(stderr,"TCP packet %d truncated too short to trace, ignored\n",
+		    pnum);
+	++ctrunc;
+	return;
+    }
+
 
     /* convert the interesting fields to local byte order */
     ptcp->th_seq   = ntohl(ptcp->th_seq);
@@ -364,6 +395,14 @@ dotrace(
 
     ++trace_count;
 
+    /* do time stats */
+    if (ptp_save->first_time.tv_sec == 0) {
+	ptp_save->first_time = current_time;
+    }
+    ptp_save->last_time = current_time;
+
+
+    /* if we're ignoring this connection, do no further processing */
     if (ptp_save->ignore_pair) {
 	return;
     }
@@ -388,7 +427,7 @@ dotrace(
 
 
     /* check the options */
-    ptcpo = ParseOptions(ptcp,len-(pip->ip_hl*4));
+    ptcpo = ParseOptions(ptcp,plast);
     if (ptcpo->mss != -1)
 	thisdir->mss = ptcpo->mss;
     if (ptcpo->ws != -1) {
@@ -418,8 +457,11 @@ dotrace(
     tcp_data_length = tcp_length - (4 * ptcp->th_off);
 
     /* SYN and FIN are really data, too (sortof) */
+#ifdef OLD
+    /* Mark didn't like this and I can't remember why I did it anyway... */
     if (SYN_SET(ptcp)) ++tcp_data_length;
     if (FIN_SET(ptcp)) ++tcp_data_length;
+#endif /* OLD */
 
 
     /* do data stats */
@@ -432,12 +474,6 @@ dotrace(
 	    (tcp_data_length < thisdir->min_seg_size))
 	    thisdir->min_seg_size = tcp_data_length;
     }
-
-    /* do time stats */
-    if (ptp_save->first_time.tv_sec == 0) {
-	ptp_save->first_time = current_time;
-    }
-    ptp_save->last_time = current_time;
 
     /* total packets stats */
     ++ptp_save->packets;
@@ -536,7 +572,7 @@ dotrace(
 	    plotter_uarrow(from_tsgpl, current_time, end);
 	    plotter_line(from_tsgpl, current_time, start, current_time, end);
 /* 	    plotter_perm_color(from_tsgpl, default_color); */
-	} else {			/* DATA */
+	} else if (tcp_data_length > 0) {		/* DATA */
 	    if (retrans)
 		plotter_perm_color(from_tsgpl, retrans_color);
 	    plotter_darrow(from_tsgpl, current_time, start);
@@ -665,6 +701,12 @@ trace_done(void)
 	fprintf(stdout,"%d connection(s) traced:\n", num_tcp_pairs + 1);
     fprintf(stdout,"%d packets seen, %d TCP packets traced\n",
 	    packet_count, trace_count);
+    if (ctrunc > 0) {
+	fprintf(stdout,"*** %d packets were too short to process at some point\n",
+		ctrunc);
+	if (!printtrunc)
+	    fprintf(stdout,"\t(use -w option to show details)\n");
+    }
     if (debug>1)
 	fprintf(stdout,"average search length: %d\n",
 		search_count / packet_count);
@@ -685,6 +727,40 @@ trace_done(void)
 
     if ((debug>1) && !nonames)
 	cadump();
+}
+
+static void
+MoreTcpPairs(
+    int num_needed)
+{
+    int new_max_tcp_pairs;
+    int i;
+
+    if (num_needed < max_tcp_pairs)
+	return;
+
+    new_max_tcp_pairs = max_tcp_pairs * 4;
+    while (new_max_tcp_pairs < num_needed)
+	new_max_tcp_pairs *= 4;
+    
+    if (debug)
+	printf("trace: making more space for %d total TCP pairs\n",
+	       new_max_tcp_pairs);
+
+    /* enlarge array to hold any pairs that we might create */
+    ttp = ReallocZ(ttp,
+		   max_tcp_pairs * sizeof(tcp_pair *),
+		   new_max_tcp_pairs * sizeof(tcp_pair *));
+
+    /* enlarge array to keep track of which ones to ignore */
+    ignore_pairs = ReallocZ(ignore_pairs,
+			    max_tcp_pairs * sizeof(Bool),
+			    new_max_tcp_pairs * sizeof(Bool));
+    if (more_conns_ignored)
+	for (i=max_tcp_pairs; i < new_max_tcp_pairs;++i)
+	    ignore_pairs[i] = TRUE;
+
+    max_tcp_pairs = new_max_tcp_pairs;
 }
 
 
@@ -719,11 +795,10 @@ IgnoreConn(
 	
     --ix;
 
-    if (ix < max_tcp_pairs)
-	ignore_pairs[ix] = TRUE;
-    else
-	fprintf(stderr,"Warning: can't ignore %d, max connections is %d\n",
-		ix+1,max_tcp_pairs);
+    MoreTcpPairs(ix);
+
+    more_conns_ignored = FALSE;
+    ignore_pairs[ix] = TRUE;
 }
 
 
@@ -740,6 +815,8 @@ OnlyConn(
 	
     --ix_only;
 
+    MoreTcpPairs(ix_only);
+
     if (!cleared) {
 	for (ix = 0; ix < max_tcp_pairs; ++ix) {
 	    ignore_pairs[ix] = TRUE;
@@ -747,18 +824,15 @@ OnlyConn(
 	cleared = TRUE;
     }
 
-    if (ix_only < max_tcp_pairs)
-	ignore_pairs[ix_only] = FALSE;
-    else
-	fprintf(stderr,"Warning: can't do ONLY %d, max connections is %d\n",
-		ix_only+1,max_tcp_pairs);
+    more_conns_ignored = TRUE;
+    ignore_pairs[ix_only] = FALSE;
 }
 
 
 struct tcp_options *
 ParseOptions(
     struct tcphdr *ptcp,
-    int tcplen)
+    void *plast)
 {
     static struct tcp_options tcpo;
     struct sack_block *psack;
@@ -777,10 +851,11 @@ ParseOptions(
 	plen = popt+1;
 
 	/* check for truncation error */
-	if ((unsigned)(ptcp + tcplen) < (unsigned)popt) {
-	    if (debug)
+	if ((unsigned)popt > (unsigned)plast) {
+	    if (printtrunc)
 		fprintf(stderr,"\
-ParseOptions: packet %d too short to parse options, ignoring options\n", pnum);
+ParseOptions: packet %d too short to parse remaining options\n", pnum);
+	    ++ctrunc;
 	    break;
 	}
 
@@ -789,10 +864,12 @@ ParseOptions: packet %d too short to parse options, ignoring options\n", pnum);
 ParseOptions: packet %d %s option has length 0, skipping other options\n", \
               pnum,opt); \
 	      popt = pdata; break;} \
-	if ((unsigned)popt > (unsigned)(ptcp + tcplen)) { \
-              fprintf(stderr, "\
+	if ((unsigned)popt > (unsigned)(plast)) { \
+	    if (printtrunc) \
+		fprintf(stderr, "\
 ParseOptions: packet %d %s option cut short by snap length, skipping other options\n", \
               pnum,opt); \
+	      ++ctrunc; \
 	      popt = pdata; break;} \
 
 
@@ -833,8 +910,17 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 		   in GCC 2.7.2 */
 		memcpy(&tcpo.sacks[(unsigned)tcpo.sack_count], psack,
 		       sizeof(sack_block));
-		++tcpo.sack_count;
 		++psack;
+		if ((unsigned)psack > (unsigned)plast) {
+		    /* this SACK block isn't all here */
+		    if (printtrunc)
+			fprintf(stderr,
+				"packet %d: SACK block truncated, ignoring the rest\n",
+				pnum);
+		    ++ctrunc;
+		    break;
+		}
+		++tcpo.sack_count;
 		if (tcpo.sack_count > MAX_SACKS) {
 		    /* this isn't supposed to be able to happen */
 		    fprintf(stderr,

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/output.c,v 3.6 1996/12/04 15:52:35 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/output.c,v 3.10 1997/03/05 07:37:28 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -199,8 +199,9 @@ void
 PrintTrace(
     tcp_pair *ptp)
 {
-    unsigned long etime;
-    double etime_float;
+    double etime;
+    u_long etime_secs;
+    u_long etime_usecs;
     tcb *pab = &ptp->a2b;
     tcb *pba = &ptp->b2a;
     char *host1 = pab->host_letter;
@@ -224,11 +225,13 @@ PrintTrace(
     fprintf(stdout,"\tlast packet:   %s\n", ts2ascii(&ptp->last_time));
 
     etime = elapsed(ptp->first_time,ptp->last_time);
+    etime_secs = etime / 1000000.0;
+    etime_usecs = 1000000 * (etime/1000000.0 - (double)etime_secs);
     fprintf(stdout,"\telapsed time:  %lu:%02lu:%02lu.%06lu\n",
-	    (etime / 1000000) / (60 * 24),
-	    (etime / 1000000) % (60 * 24) / 60,
-	    ((etime / 1000000) % (60 * 24)) % 60,
-	    (etime % 1000000));
+	    etime_secs / (60 * 60),
+	    etime_secs % (60 * 60) / 60,
+	    (etime_secs % (60 * 60)) % 60,
+	    etime_usecs);
     fprintf(stdout,"\ttotal packets: %lu\n", ptp->packets);
 	
 
@@ -246,7 +249,7 @@ PrintTrace(
     StatlineI("unique packets","","%8lu",
 	      pab->data_pkts-pab->rexmit_pkts,
 	      pba->data_pkts-pba->rexmit_pkts);
-#endif OLD
+#endif /* OLD */
     StatlineI("actual data pkts","","%8lu", pab->data_pkts, pba->data_pkts);
     StatlineI("actual data bytes","","%8lu", pab->data_bytes, pba->data_bytes);
     StatlineI("rexmt data pkts","","%8lu", pab->rexmit_pkts, pba->rexmit_pkts);
@@ -261,10 +264,10 @@ PrintTrace(
 		       pba->syn_count, pba->fin_count),(int)bufr));
     if (pab->f1323_ws || pba->f1323_ws || pab->f1323_ts || pba->f1323_ts) {
 	StatlineI("req 1323 ws/ts","","%s",
-		  sprintf(bufl,"%c/%c",
-			  pab->f1323_ws?'Y':'N',pab->f1323_ts?'Y':'N'),
-		  sprintf(bufl,"%c/%c",
-			  pba->f1323_ws?'Y':'N',pba->f1323_ts?'Y':'N'));
+		  (sprintf(bufl,"%c/%c",
+		      pab->f1323_ws?'Y':'N',pab->f1323_ts?'Y':'N'),(int)bufl),
+		  (sprintf(bufr,"%c/%c",
+		      pba->f1323_ws?'Y':'N',pba->f1323_ts?'Y':'N'),(int)bufr));
     }
     if (pab->f1323_ws || pba->f1323_ws) {
 	StatlineI("adv wind scale","","%d",
@@ -298,10 +301,10 @@ PrintTrace(
 
 
     /* do the throughput calcs */
-    etime_float = (double) etime / 1000000.0;
+    etime /= 1000000.0;  /* convert to seconds */
     StatLineF("throughput","Bps","%8.0f",
-	      (double) (pab->data_bytes-pab->rexmit_bytes) / etime_float,
-	      (double) (pba->data_bytes-pba->rexmit_bytes) / etime_float);
+	      (double) (pab->data_bytes-pab->rexmit_bytes) / etime,
+	      (double) (pba->data_bytes-pba->rexmit_bytes) / etime);
 
     if (print_rtt) {
 	fprintf(stdout,"\n");
@@ -321,10 +324,10 @@ PrintTrace(
 
 	if (pab->rtt_amback || pba->rtt_amback) {
 	    fprintf(stdout, "\
-\t  For the following 5 RTT statistics, only ACKs for
-\t  multiply-transmitted segments (ambiguous ACKs) were
-\t  considered.  Times are taken from the last instance
-\t  of a segment.
+\t  For the following 5 RTT statistics, only ACKs for\n\
+\t  multiply-transmitted segments (ambiguous ACKs) were\n\
+\t  considered.  Times are taken from the last instance\n\
+\t  of a segment.\n\
 ");
 	    StatlineI("ambiguous acks","","%8lu",
 		      pab->rtt_amback, pba->rtt_amback);

@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_config[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.4 1997/02/14 20:04:55 sdo Exp $";
 
 
 /* define GROK_SNOOP if you want tcptrace to understand the output
@@ -45,6 +45,6 @@ static char const rcsid_config[] =
 #define GROK_NETM
 
 
-/* define GROK_SNOOP if you want tcptrace to understand the output
+/* define GROK_ETHERPEEK if you want tcptrace to understand the output
    format of the Macintosh program Etherpeek */
 #define GROK_ETHERPEEK
