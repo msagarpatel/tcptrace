@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,12 +52,12 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid[] =
-   "$Header: /usr/local/cvs/tcptrace/mod_slice.c,v 1.4 2001/05/31 20:55:01 sdo Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED rcsid[] =
+   "$Header: /usr/local/cvs/tcptrace/mod_slice.c,v 1.5 2003/11/19 14:38:03 sdo Exp $";
 
 #ifdef LOAD_MODULE_SLICE
 
-#include "tcptrace.h"
 #include "mod_slice.h"
 
 /* name of the file that slice data is dumped into */

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,22 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_tcptrace[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.h,v 5.61 2003/05/03 20:45:51 jkhasgiw Exp $";
+
+
+/*
+ *
+ * The newest gcc (3.3) is much pickier about the unused variables that
+ * we define for Copyright and RCSid, so this will shut it up.
+ *
+ */
+#ifdef __GNUC__
+#define GCC_UNUSED __attribute__((unused))
+#else
+#define GCC_UNUSED
+#endif
+
+static char const GCC_UNUSED rcsid_tcptrace[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.h,v 5.78 2004/11/04 21:55:38 sdo Exp $";
 
 
 #include <stdio.h>
@@ -129,7 +144,6 @@ typedef struct pl_line *PLINE;
 /* (8 allows 26**8 different endpoints (209,000,000,000)
     probably plenty for now!!!!!) */
 #define MAX_HOSTLETTER_LEN 8 
-
 
 
 /* several places in the code NEED numbers of a specific size. */
@@ -249,15 +263,6 @@ extern timeval last_packet;
 extern u_long tcp_trace_count;
 extern u_long udp_trace_count;
 
-
-#ifdef OLD
-/* test 2 IP addresses for equality */
-#define IP_SAMEADDR(addr1,addr2) (((addr1).s_addr) == ((addr2).s_addr))
-
-/* copy IP addresses */
-#define IP_COPYADDR(toaddr,fromaddr) ((toaddr).s_addr = (fromaddr).s_addr)
-#endif
-
 typedef struct segment {
     seqnum	seq_firstbyte;	/* seqnumber of first byte */
     seqnum 	seq_lastbyte;	/* seqnumber of last byte */
@@ -303,7 +308,8 @@ typedef struct tcb {
 	/* If we are using window scaling, have we adjusted the 
 	   win_min field from the non-scaled window size
 	   that appeared in the SYN packet?? */
-	Bool window_stats_updated_for_scaling;
+    Bool window_stats_updated_for_scaling;
+    u_llong     win_scaled_pkts; /* Used to calculate avg win adv */
 
     /* statistics added */
     u_llong	data_bytes;
@@ -316,7 +322,7 @@ typedef struct tcb {
     u_llong	pureack_pkts;	/* mallman - pure acks, no data */
     u_long	win_max;
     u_long	win_min;
-    u_long	win_tot;
+    u_llong	win_tot;
     u_long      win_last;  /* last advertised window size*/
     u_long	win_zero_ct;
     u_llong	packets;
@@ -334,9 +340,6 @@ typedef struct tcb {
     u_long     urg_data_bytes;
     u_long     urg_data_pkts;
    
-   /* stats on sequence numbers */
-
-								
    /* Statistics to store the number of Zero window probes
       seen and the total number of bytes spent for it. */
     u_long      num_zwnd_probes;  
@@ -472,6 +475,7 @@ typedef struct tcb {
     /* Congestion window graph */
     PLOTTER	owin_plotter;
     PLINE	owin_line;
+    PLINE       rwin_line;
     PLINE	owin_avg_line;
     PLINE 	owin_wavg_line;
 
@@ -482,6 +486,14 @@ typedef struct tcb {
     /* for looking for interesting SACK blocks */
     u_long	num_sacks;
     u_long	max_sack_blocks;
+    u_long	num_dsacks;
+
+    /* for computing LEAST (see FAQ) */
+    enum	tcp_strains { TCP_RENO, TCP_SACK, TCP_DSACK } tcp_strain;
+    u_long	LEAST;
+    char	in_rto;
+    u_long	recovered, recovered_orig, rto_segment, lastackno;
+    u_long	event_retrans, event_dupacks;
 
     /* host name letter(s) */
     char	*host_letter;
@@ -539,6 +551,38 @@ typedef struct tcphdr tcphdr;
 extern int num_tcp_pairs;	/* how many pairs are in use */
 extern tcp_pair **ttp;		/* array of pointers to allocated pairs */
 
+/* Wed Aug 20, 2003 - Ramani*/
+/*  Prior to version 6.4.11, the data structure for storing the snapshots of 
+ connections was a hashtable with linked lists. But this might lead to a 
+ worst case scenario when many connections hash to the same hash table entry.
+ In such a case, searching for the connections degrades to searching a linked 
+ list with a worst case complexity of O(number of connections in list). Hence 
+ the new version implements an AVL tree in place of linked list leading to a 
+ worst case complexity of O(ln(number of connections in tree)). 
+    The modified data structure was tested with dumpfiles containing lots of 
+ connections. A comparison of the profiles suggests an improvement in the time 
+ spent in the dotrace function. Even though the AVL tree implementation 
+ involves balancing the tree, since most of the accesses involve searching the 
+ data structure, AVL tree performs MUCH better than linked list.
+     The algorithms for AVL tree implementation are based on those explained in
+ "Data Structures and Program Design in C by Robert L.Kruse, Bruce P.Leung, 
+ Clovis L.Tondo". The source code for AVL tree implementation is from the 
+ Institute of Applied Iconoclasm who put up the source code at 
+ <http://www.purists.org>. We thank Georg for the source code whose mail 
+ address has been mentioned as <georg@purists.org> */
+
+/* Data structures for AVL tree */
+
+/* Which of a given node's subtrees is higher in the AVL tree */
+enum AVLSKEW {
+   EQUAL1, LEFT, RIGHT
+};
+                                                                                
+/* Did an insertion/deletion succeed and if we need to balance the AVL tree */
+enum AVLRES {
+   OK, BALANCE
+};
+
 /* Tue Nov 17, 1998 */
 /* prior to version 5.13, we kept a hash table of all of the connections. */
 /* The most recently-accessed connections move to the front of the bucket */
@@ -550,10 +594,12 @@ extern tcp_pair **ttp;		/* array of pointers to allocated pairs */
 /* hash table.  We only retrieve the connection record if the snapshot */
 /* matches. The result is that it works MUCH better when memory is low. */
 typedef struct ptp_snap {
+    enum AVLSKEW        skew;      /* Skew of the AVL tree node */
     tcp_pair_addrblock	addr_pair; /* just a copy */
-    struct ptp_snap	*next;
+    struct ptp_snap     *left, *right;  /* Left and right trees of the AVL node */
     void		*ptp;
 } ptp_snap;
+
 
 typedef struct ptp_ptr {
   struct ptp_ptr	*next;
@@ -673,6 +719,7 @@ extern Bool plot_tput_instant;
 extern Bool filter_output;
 extern Bool do_udp;
 extern Bool show_title;
+extern Bool show_rwinline;
 extern Bool docheck_hw_dups;
 /* constants for real-time (continuous) mode */
 extern Bool run_continuously;
@@ -795,6 +842,7 @@ PLOTTER new_plotter(tcb *plast, char *filename, char *title,
 		    char *xlabel, char *ylabel, char *suffix);
 int rexmit(tcb *, seqnum, seglen, Bool *);
 enum t_ack ack_in(tcb *, seqnum, unsigned tcp_data_length, u_long eff_win);
+Bool IsRTO(tcb *ptcb, seqnum s);
 void DoThru(tcb *ptcb, int nbytes);
 struct mfile *Mfopen(char *fname, char *mode);
 void Minit(void);
@@ -815,8 +863,6 @@ void CompFormats(void);
 int CompIsCompressed(void);
 Bool FileIsStdin(char *filename);
 struct tcb *ptp2ptcb(tcp_pair *ptp, struct ip *pip, struct tcphdr *ptcp);
-void IP_COPYADDR (ipaddr *toaddr, ipaddr fromaddr);
-int IP_SAMEADDR (ipaddr addr1, ipaddr addr2);
 void PcapSavePacket(char *filename, struct ip *pip, void *plast);
 void StringToArgv(char *buf, int *pargc, char ***pargv);
 void CopyAddr(tcp_pair_addrblock *, struct ip *pip,portnum,portnum);
@@ -846,6 +892,11 @@ ptp_ptr *MakePtpPtr(void);
 void FreePtpPtr(ptp_ptr *ptr);
 void freequad(quadrant **);
 
+/* AVL tree support routines */
+enum AVLRES SnapInsert(ptp_snap **n, ptp_snap *new_node);
+enum AVLRES SnapRemove(ptp_snap **n, tcp_pair_addrblock address);
+int AVL_WhichDir(tcp_pair_addrblock *ptpa1, tcp_pair_addrblock *ptpa2);
+    
 /* high-level line drawing */
 PLINE new_line(PLOTTER pl, char *label, char *color);
 void extend_line(PLINE pline, timeval xval, int yval);
@@ -888,6 +939,13 @@ of bits as specified in RFC 2481 and draft-ietf-tsvwg-ecn-04.txt */
 #define A2B 1
 #define B2A -1
 
+/* If the AVL node is to left or right in the AVL tree */
+/* Words "LEFT" and "RIGHT" have already been taken in an enum
+ * above. Let us call them LT, RT just not to make it ambiguous for ourselves
+ * or the compiler or both :-)
+ */
+#define LT -2
+#define RT 2
 
 /*macros for maintaining the seqspace used for rexmit*/
 #define QUADSIZE	(0x40000000)
@@ -1049,6 +1107,9 @@ typedef int pread_f(struct timeval *, int *, int *, void **,
 #ifdef GROK_NETSCOUT
 	pread_f *is_netscout(char *);
 #endif /* GROK_NETSCOUT */
+#ifdef GROK_ERF
+	pread_f *is_erf(char *);
+#endif /* GROK_ERF */
 
 #ifndef __VMS
 /* I've had problems with the memcpy function that gcc stuffs into the program
@@ -1095,7 +1156,7 @@ int snprintf_vms(char *str, size_t len, const char *fmt, ...);
 #define ADDR_ISV4(paddr) (ADDR_VERSION((paddr)) == 4)
 #define ADDR_ISV6(paddr) (ADDR_VERSION((paddr)) == 6)
 struct ipaddr *IPV4ADDR2ADDR(struct in_addr *addr4);    
-struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);    
+struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);
 
 /*
  * Macros to check for congestion experienced bits
@@ -1111,7 +1172,7 @@ struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);
 #endif /* IP_MAXPACKET */
 
 /* max 32 bit number */
-#define MAX_32 (0x100000000)
+#define MAX_32 (0x100000000LL)
 
 #ifndef ETHERTYPE_REVARP
 #define ETHERTYPE_REVARP        0x8035
@@ -1120,4 +1181,12 @@ struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);
 #ifndef ETHERTYPE_VLAN
 #define ETHERTYPE_VLAN		0x8100
 #endif	/* 802.1Q Virtual LAN */
+
+/* support for PPPoE encapsulation added by Yann Samama (ysamama@nortelnetworks.com)*/
+#ifndef ETHERTYPE_PPPOE_SESSION
+#define ETHERTYPE_PPPOE_SESSION	0x8864
+#endif /* PPPoE ether type */
+#ifndef PPPOE_SIZE
+#define PPPOE_SIZE		22
+#endif /* PPPOE header size */
 

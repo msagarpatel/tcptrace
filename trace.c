@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,14 +52,15 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/trace.c,v 5.57 2003/05/03 20:45:52 jkhasgiw Exp $";
-
-
 #include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/trace.c,v 5.74 2004/11/04 22:43:51 mramadas Exp $";
+
+
 #include "gcache.h"
+
 
 /* locally global variables */
 static int tcp_packet_count = 0;
@@ -101,8 +103,7 @@ static void RemoveOldConns(ptp_ptr **conn_list_head,
 			   int *conn_count);
 static void RemoveConn(const ptp_ptr *tcp_ptr);
 static void RemoveTcpPair(const ptp_ptr *tcp_ptr);
-
-
+static Bool MissingData(tcp_pair *ptp);
 
 /* options */
 Bool show_zero_window = TRUE;
@@ -142,6 +143,71 @@ char *b2a_seg_color     = "yellow";
 /* ack diamond dongle colors */
 char *ackdongle_nosample_color	= "blue";
 char *ackdongle_ambig_color	= "red";
+
+
+
+/* 
+ * ipcopyaddr: copy an IPv4 or IPv6 address  
+ */
+static inline void IP_COPYADDR (ipaddr *ptoaddr, ipaddr *pfromaddr)
+{
+    if (ADDR_ISV6(pfromaddr)) {
+	memcpy(ptoaddr->un.ip6.s6_addr, pfromaddr->un.ip6.s6_addr, 16);
+	ptoaddr->addr_vers = 6;
+    } else {
+	ptoaddr->un.ip4.s_addr = pfromaddr->un.ip4.s_addr;
+	ptoaddr->addr_vers = 4;
+    }
+}
+
+
+
+/*
+ * ipsameaddr: test for equality of two IPv4 or IPv6 addresses
+ */
+static inline int IP_SAMEADDR (ipaddr *paddr1, ipaddr *paddr2)
+{
+    int ret = 0;
+    if (ADDR_ISV4(paddr1)) {
+	if (ADDR_ISV4(paddr2))
+	    ret = (paddr1->un.ip4.s_addr == paddr2->un.ip4.s_addr);
+    } else {
+	/* already know ADDR_ISV6(paddr1) */
+	if (ADDR_ISV6(paddr2))
+	    ret = (memcmp(paddr1->un.ip6.s6_addr,
+			  paddr2->un.ip6.s6_addr,16) == 0);
+    }
+    if (debug > 3)
+	printf("SameAddr(%s(%d),%s(%d)) returns %d\n",
+	       HostName(*paddr1), ADDR_VERSION(paddr1),
+	       HostName(*paddr2), ADDR_VERSION(paddr2),
+	       ret);
+    return ret;
+}
+
+/*  
+ *  iplowaddr: test if one IPv4 or IPv6 address is lower than the second one
+ */
+static inline int IP_LOWADDR (ipaddr *paddr1, ipaddr *paddr2)
+{
+    int ret = 0;
+    if (ADDR_ISV6(paddr1)) {
+	if (ADDR_ISV6(paddr2))
+	    ret = (memcmp(paddr1->un.ip6.s6_addr,
+			  paddr2->un.ip6.s6_addr,16) < 0);
+    } else {
+	/* already know ADDR_ISV4(paddr1) */
+	if (ADDR_ISV4(paddr2))
+	    ret = (paddr1->un.ip4.s_addr < paddr2->un.ip4.s_addr);
+    }
+    if (debug > 3)
+	printf("LowAddr(%s(%d),%s(%d)) returns %d\n",
+	       HostName(*paddr1), ADDR_VERSION(paddr1),
+	       HostName(*paddr2), ADDR_VERSION(paddr2),
+	       ret);
+    return ret;
+}
+
 
 /* return elapsed time in microseconds */
 /* (time2 - time1) */
@@ -259,17 +325,18 @@ CopyAddr(
     ptpa->b_port = port2;
 
     if (PIP_ISV4(pip)) { /* V4 */
-	IP_COPYADDR(&ptpa->a_address, *IPV4ADDR2ADDR(&pip->ip_src));
-	IP_COPYADDR(&ptpa->b_address, *IPV4ADDR2ADDR(&pip->ip_dst));
+	IP_COPYADDR(&ptpa->a_address, IPV4ADDR2ADDR(&pip->ip_src));
+	IP_COPYADDR(&ptpa->b_address, IPV4ADDR2ADDR(&pip->ip_dst));
 	/* fill in the hashed address */
 	ptpa->hash = ptpa->a_address.un.ip4.s_addr
 	    + ptpa->b_address.un.ip4.s_addr
 	    + ptpa->a_port + ptpa->b_port;
+       
     } else { /* V6 */
 	int i;
 	struct ipv6 *pip6 = (struct ipv6 *)pip;
-	IP_COPYADDR(&ptpa->a_address, *IPV6ADDR2ADDR(&pip6->ip6_saddr));
-	IP_COPYADDR(&ptpa->b_address, *IPV6ADDR2ADDR(&pip6->ip6_daddr));
+	IP_COPYADDR(&ptpa->a_address, IPV6ADDR2ADDR(&pip6->ip6_saddr));
+	IP_COPYADDR(&ptpa->b_address, IPV6ADDR2ADDR(&pip6->ip6_daddr));
 	/* fill in the hashed address */
 	ptpa->hash = ptpa->a_port + ptpa->b_port;
 	for (i=0; i < 16; ++i) {
@@ -287,67 +354,143 @@ CopyAddr(
 	       ptpa->hash);
 }
 
-
+/* 
+ * This function tells us which way to go (Left or Right) in search for our 
+ * matching 4-tuple {IP1:port1; IP2:port2} in the AVL tree hash-bucket.
+ * 
+ * It returns LT or RT depending on if we had to go left or right in the AVL Tree to
+ * find our exact 4-tuple match, if it existed in the tree.
+ * If the exact 4-tuple is found, it returns 0.
+ */
 
 int
-WhichDir(
-    tcp_pair_addrblock *ptpa1,
-    tcp_pair_addrblock *ptpa2)
+AVL_WhichDir(
+	     tcp_pair_addrblock *ptpa1,
+	     tcp_pair_addrblock *ptpa2)
 {
 
-#ifdef BROKEN_COMPILER
-    /* sorry for the ugly nested 'if', but a 4-way conjunction broke my	*/
-    /* Optimizer (under 'gcc version cygnus-2.0.2')			*/
+    /*
+     * Here is our algorithm. If ptpa1={x1:p1; x2:p2} and ptpa2={y1:q1; y2:q2}
+     * we choose X1=min(x1,x2) and X2=max(x1,x2); Similarly for Y1, Y2.
+     * P1=port associated with X1, i.e. it is p1 if x1<x2 and it is p2 if not.
+     * P2=port associated with X2. Similarly Q1, Q2 are calculated based on Y1,Y2.
+     * 
+     * Compare (X1, Y1)? ; X1<Y1 => LEFT; X1>Y1 => RIGHT; X1==Y1 => Continue down
+     * 
+     * Compare (X2, Y2)? ; X2<Y2 => LEFT; X2>Y2 => RIGHT; X2==Y2 => Continue down
+     * 
+     * Compare (P1, Q1)? ; P1<Q1 => LEFT; P1>Q1 => RIGHT; P1==Q1 => Continue down
+     * 
+     * Compare (P2, Q2)? ; P2<Q2 => LEFT; P2>Q2 => RIGHT;
+     * 
+     * If P2==Q2, then this connection should have matched the A2B or B2A catch 
+     * from WhichDir()
+     */
+	
+    ipaddr *X1, *X2, *Y1, *Y2;
+    int P1, P2, Q1, Q2;
+	
+    if (IP_LOWADDR(&(ptpa1->a_address), &(ptpa1->b_address))) {		
+        X1=&ptpa1->a_address;
+	P1=ptpa1->a_port;	    
+	X2=&ptpa1->b_address;
+	P2=ptpa1->b_port;
+    } 
+    else {
+        X1=&ptpa1->b_address;
+	P1=ptpa1->b_port;
+	X2=&ptpa1->a_address;
+	P2=ptpa1->a_port;
+    }
 
-    /* same as first packet */
-    if (IP_SAMEADDR(ptpa1->a_address, ptpa2->a_address))
-	if (IP_SAMEADDR(ptpa1->b_address, ptpa2->b_address))
-	    if ((ptpa1->a_port == ptpa2->a_port))
-		if ((ptpa1->b_port == ptpa2->b_port))
-		    return(A2B);
+    if (IP_LOWADDR(&(ptpa2->a_address), &(ptpa2->b_address))) {		
+        Y1=&ptpa2->a_address;
+	Q1=ptpa2->a_port;
+	Y2=&ptpa2->b_address;
+	Q2=ptpa2->b_port;
+    } 
+    else {
+        Y1=&ptpa2->b_address;
+	Q1=ptpa2->b_port;	    
+ 	Y2=&ptpa2->a_address;
+	Q2=ptpa2->a_port;
+    }
 
-    /* reverse of first packet */
-    if (IP_SAMEADDR(ptpa1->a_address, ptpa2->b_address))
-	if (IP_SAMEADDR(ptpa1->b_address, ptpa2->a_address))
-	    if ((ptpa1->a_port == ptpa2->b_port))
-		if ((ptpa1->b_port == ptpa2->a_port))
-		    return(B2A);
-#else /* BROKEN_COMPILER */
-    /* same as first packet */
-    if (IP_SAMEADDR(ptpa1->a_address, ptpa2->a_address) &&
-	IP_SAMEADDR(ptpa1->b_address, ptpa2->b_address) &&
-	(ptpa1->a_port == ptpa2->a_port) &&
-	(ptpa1->b_port == ptpa2->b_port))
-	return(A2B);
+    // Optimization suggested by Dr.Ostermann. Check the ports first.
+    if (P1<Q1) return LT;
+    if (Q1<P1) return RT;
+	
+    if (P2<Q2) return LT;
+    if (Q2<P2) return RT;
 
-    /* reverse of first packet */
-    if (IP_SAMEADDR(ptpa1->a_address, ptpa2->b_address) &&
-	IP_SAMEADDR(ptpa1->b_address, ptpa2->a_address) &&
-	(ptpa1->a_port == ptpa2->b_port) &&
-	(ptpa1->b_port == ptpa2->a_port))
-	return(B2A);
-#endif /* BROKEN_COMPILER */
 
-    /* different connection */
-    return(0);
+    if (IP_LOWADDR(X1,Y1)) return LT;
+    if (IP_LOWADDR(Y1,X1)) return RT;
+	
+    if (IP_LOWADDR(X2,Y2)) return LT;
+    if (IP_LOWADDR(Y2,X2)) return RT;
+	
+    return 0;
 }
 
-
+int
+  WhichDir(
+	       tcp_pair_addrblock *ptpa1,
+	       tcp_pair_addrblock *ptpa2)
+{
+#ifdef BROKEN_COMPILER
+   /* sorry for the ugly nested 'if', but a 4-way conjunction broke my*/
+   /* Optimizer (under 'gcc version cygnus-2.0.2')*/
+   
+   /* same as first packet */
+   if (IP_SAMEADDR(&(ptpa1->a_address), &(ptpa2->a_address)))
+     if (IP_SAMEADDR(&(ptpa1->b_address), &(ptpa2->b_address)))
+       if ((ptpa1->a_port == ptpa2->a_port))
+	 if ((ptpa1->b_port == ptpa2->b_port))
+	   return(A2B);
+   
+   /* reverse of first packet */
+   if (IP_SAMEADDR(&(ptpa1->a_address), &(ptpa2->b_address)))
+     if (IP_SAMEADDR(&(ptpa1->b_address), &(ptpa2->a_address)))
+       if ((ptpa1->a_port == ptpa2->b_port))
+	 if ((ptpa1->b_port == ptpa2->a_port))
+	   return(B2A);
+#else /* BROKEN_COMPILER */
+   /* same as first packet */
+   if (IP_SAMEADDR(&(ptpa1->a_address), &(ptpa2->a_address)) &&
+       IP_SAMEADDR(&(ptpa1->b_address), &(ptpa2->b_address)) &&
+       (ptpa1->a_port == ptpa2->a_port) &&
+       (ptpa1->b_port == ptpa2->b_port))
+     return(A2B);
+   
+   /* reverse of first packet */
+   if (IP_SAMEADDR(&(ptpa1->a_address), &(ptpa2->b_address)) &&
+       IP_SAMEADDR(&(ptpa1->b_address), &(ptpa2->a_address)) &&
+       (ptpa1->a_port == ptpa2->b_port) &&
+       (ptpa1->b_port == ptpa2->a_port))
+     return(B2A);
+#endif /* BROKEN_COMPILER */
+   
+   /* different connection */
+   return(0);
+}
 
 int
 SameConn(
-    tcp_pair_addrblock *ptpa1,
-    tcp_pair_addrblock *ptpa2,
-    int      *pdir)
+	 tcp_pair_addrblock *ptpa1,
+	 tcp_pair_addrblock *ptpa2,
+	 int      *pdir)
 {
-    /* if the hash values are different, they can't be the same */
-    if (ptpa1->hash != ptpa2->hash)
-	return(0);
-
-    /* OK, they hash the same, are they REALLY the same function */
-    *pdir = WhichDir(ptpa1,ptpa2);
-    return(*pdir != 0);
+   
+   /* if the hash values are different, they can't be the same */
+   if (ptpa1->hash != ptpa2->hash)
+     return(0);
+   
+   /* OK, they hash the same, are they REALLY the same function */
+   *pdir = WhichDir(ptpa1,ptpa2);
+   return(*pdir != 0);
 }
+
 
 
 static tcp_pair *
@@ -402,6 +545,17 @@ NewTTP(
 	strdup(EndpointName(ptp->addr_pair.b_address,
 			    ptp->addr_pair.b_port));
 
+    /* make the initial guess that each side is a reno tcp */
+    /* this might actually be a poor thing to do in the sense that
+       we could be looking at a Tahoe trace ... but the only side
+       effect for the moment is that the LEAST estimate may be
+       busted, although it very well may not be */
+    ptp->a2b.tcp_strain = TCP_RENO;
+    ptp->b2a.tcp_strain = TCP_RENO;
+
+    ptp->a2b.LEAST = ptp->b2a.LEAST = 0;
+    ptp->a2b.in_rto = ptp->b2a.in_rto = FALSE;
+
     /* init time sequence graphs */
     ptp->a2b.tsg_plotter = ptp->b2a.tsg_plotter = NO_PLOTTER;
     if (graph_tsg && !ptp->ignore_pair) {
@@ -455,6 +609,14 @@ NewTTP(
 		new_line(ptp->a2b.owin_plotter, "owin", "red");
 	    ptp->b2a.owin_line =
 		new_line(ptp->b2a.owin_plotter, "owin", "red");
+
+	    if (show_rwinline) {
+	      ptp->a2b.rwin_line =
+	        new_line(ptp->a2b.owin_plotter, "rwin", "yellow");
+	      ptp->b2a.rwin_line =
+	        new_line(ptp->b2a.owin_plotter, "rwin", "yellow");
+	    }
+	  
 	    ptp->a2b.owin_avg_line =
 		new_line(ptp->a2b.owin_plotter, "avg owin", "blue");
 	    ptp->b2a.owin_avg_line =
@@ -572,13 +734,25 @@ NewTTP(
 #endif /* SMALL_TABLE */
 static ptp_snap *ptp_hashtable[HASH_TABLE_SIZE] = {NULL};
 
+
+/* search efficiency data (optional) */
+/* one entry per hash table bucket */
+struct search_efficiency {
+    unsigned num_connections;
+    unsigned max_connections;
+    unsigned max_depth;
+    unsigned num_searches;
+    unsigned num_comparisons;
+};
+static struct search_efficiency hashtable_efficiency[HASH_TABLE_SIZE];
+
+
 /* double linked-lists of live and closed connections */
 static ptp_ptr	*live_conn_list_head = NULL;
 static ptp_ptr	*live_conn_list_tail = NULL;
 static ptp_ptr	*closed_conn_list_head = NULL;
 static ptp_ptr	*closed_conn_list_tail = NULL;
 static timeval	last_update_time = {0, 0};
-
 
 static tcp_pair *
 FindTTP(
@@ -589,14 +763,15 @@ FindTTP(
 {
     ptp_snap **pptph_head = NULL;
     ptp_snap *ptph;
-    ptp_snap *ptph_last;
     tcp_pair_addrblock	tp_in;
-    int dir;
+    struct search_efficiency *pse = NULL;
+    unsigned depth = 0;
+    int dir, conn_status;
     hash hval;
     *tcp_ptr = NULL;
 
     if (debug > 10) {
-      printf("trace.c: FindTTP() called\n");
+	printf("trace.c: FindTTP() called\n");
     }
 
     /* grab the address from this packet */
@@ -604,26 +779,51 @@ FindTTP(
 
     /* grab the hash value (already computed by CopyAddr) */
     hval = tp_in.hash % HASH_TABLE_SIZE;
-    
 
-    ptph_last = NULL;
     pptph_head = &ptp_hashtable[hval];
-    for (ptph = *pptph_head; ptph; ptph=ptph->next) {
-	++search_count;
 
-	if (SameConn(&tp_in,&ptph->addr_pair,&dir)) {
+    if (debug) {
+	/* search efficiency checking */
+	pse = &hashtable_efficiency[hval];
+    }
+   
+    if (pse) {
+	/* search efficiency instrumentation */
+	depth = 0;
+	++pse->num_searches;
+    }
+
+    for (ptph = *pptph_head; ptph; ) {
+	if (debug) {
+	    /* search efficiency instrumentation */
+	    ++search_count;
+	    if (pse) {
+		++depth;
+		++pse->num_comparisons;
+	    }
+	}
+
+	/* See if the current node in the AVL tree hash-bucket 
+	 * is the exact same connection as ourselves,
+	 * either in A2B or B2A directions.
+	 */
+	    
+	dir = WhichDir(&tp_in, &ptph->addr_pair);
+       	    
+	if (dir == A2B || dir == B2A) {
 	    /* OK, this looks good, suck it into memory */
+	  
 	    tcb *thisdir;
 	    tcb *otherdir;
 	    tcp_pair *ptp;
 	    if (run_continuously) {
-	      ptp_ptr *ptr = (ptp_ptr *)ptph->ptp;
-	      ptp = ptr->ptp;
+		ptp_ptr *ptr = (ptp_ptr *)ptph->ptp;
+		ptp = ptr->ptp;
 	    }
 	    else {
-	      ptp = (tcp_pair *)ptph->ptp;
+		ptp = (tcp_pair *)ptph->ptp;
 	    }
-
+	  
 	    /* figure out which direction this packet is going */
 	    if (dir == A2B) {
 		thisdir  = &ptp->a2b;
@@ -632,168 +832,187 @@ FindTTP(
 		thisdir  = &ptp->b2a;
 		otherdir = &ptp->a2b;
 	    }
-
+	  
 	    /* check for "inactive" */
 	    /* (this shouldn't happen anymore, they aren't on the list */
 	    if (ptp->inactive) {
- 	       if (!run_continuously)
-		 continue;
-               else {
-		 *tcp_ptr = (ptp_ptr *)ptph->ptp;
-                 return ((*tcp_ptr)->ptp);
-	       }
+	     
+		if (!run_continuously)
+		    continue;
+		else {
+		    *tcp_ptr = (ptp_ptr *)ptph->ptp;
+		    return ((*tcp_ptr)->ptp);
+		}
 	    }
-
+	  
+	  
 	    /* Fri Oct 16, 1998 */
 	    /* note: original heuristic was not sufficient.  Bugs */
 	    /* were pointed out by Brian Utterback and later by */
 	    /* myself and Mark Allman */
-
-	   if (!run_continuously) { 
-	    /* check for NEW connection on these same endpoints */
-	    /* 1) At least 4 minutes idle time */
-	    /*  OR */
-	    /* 2) heuristic (we might miss some) either: */
-	    /*    this packet has a SYN */
-	    /*    last conn saw both FINs and/or RSTs */
-	    /*    SYN sequence number outside last window (rfc 1122) */
-	    /*      (or less than initial Sequence, */
-	    /*       for wrap around trouble)  - Tue Nov  3, 1998*/
-	    /*  OR */
-	    /* 3) this is a SYN, last had a SYN, seq numbers differ */
-	    /* if so, mark it INACTIVE and skip from now on */
-	    if (0 && SYN_SET(ptcp)) {
-		/* better keep this debugging around, it keeps breaking */
-		printf("elapsed: %f sec\n",
-		       elapsed(ptp->last_time,current_time)/1000000);
-		printf("SYN_SET: %d\n", SYN_SET(ptcp));
-		printf("a2b.fin_count: %d\n", ptp->a2b.fin_count);
-		printf("b2a.fin_count: %d\n", ptp->b2a.fin_count);
-		printf("a2b.reset_count: %d\n", ptp->a2b.reset_count);
-		printf("b2a.reset_count: %d\n", ptp->b2a.reset_count);
-		printf("dir: %d (%s)\n", dir, dir==A2B?"A2B":"B2A");
-		printf("seq:    %lu \n", (u_long)ntohl(ptcp->th_seq));
-		printf("winend: %lu \n", otherdir->windowend);
-		printf("syn:    %lu \n", otherdir->syn);
-		printf("SEQ_GREATERTHAN winend: %d\n", 
-		       SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend));
-		printf("SEQ_LESSTHAN init syn: %d\n", 
-		       SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn));
-	    } 
-
-	    if (/* rule 1 */
-		(elapsed(ptp->last_time,current_time)/1000000 > nonreal_live_conn_interval)//(4*60)) - Using nonreal_live_conn_interval instead of the 4 mins heuristic
-		|| /* rule 2 */
-		((SYN_SET(ptcp)) && 
-		 (((thisdir->fin_count >= 1) ||
-		   (otherdir->fin_count >= 1)) ||
-		  ((thisdir->reset_count >= 1) ||
-		   (otherdir->reset_count >= 1))) &&
-		 (SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend) ||
-		  SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn)))
-		|| /* rule 3 */
-		(SYN_SET(ptcp) &&
-		 (thisdir->syn_count > 1) &&
-		 (thisdir->syn != ntohl(ptcp->th_seq)))) {
+	  
+	    if (!run_continuously) { 
+		/* check for NEW connection on these same endpoints */
+		/* 1) At least 4 minutes idle time */
+		/*  OR */
+		/* 2) heuristic (we might miss some) either: */
+		/*    this packet has a SYN */
+		/*    last conn saw both FINs and/or RSTs */
+		/*    SYN sequence number outside last window (rfc 1122) */
+		/*      (or less than initial Sequence, */
+		/*       for wrap around trouble)  - Tue Nov  3, 1998*/
+		/*  OR */
+		/* 3) this is a SYN, last had a SYN, seq numbers differ */
+		/* if so, mark it INACTIVE and skip from now on */
+		if (0 && SYN_SET(ptcp)) {
+		    /* better keep this debugging around, it keeps breaking */
+		    printf("elapsed: %f sec\n",
+			   elapsed(ptp->last_time,current_time)/1000000);
+		    printf("SYN_SET: %d\n", SYN_SET(ptcp));
+		    printf("a2b.fin_count: %d\n", ptp->a2b.fin_count);
+		    printf("b2a.fin_count: %d\n", ptp->b2a.fin_count);
+		    printf("a2b.reset_count: %d\n", ptp->a2b.reset_count);
+		    printf("b2a.reset_count: %d\n", ptp->b2a.reset_count);
+		    printf("dir: %d (%s)\n", dir, dir==A2B?"A2B":"B2A");
+		    printf("seq:    %lu \n", (u_long)ntohl(ptcp->th_seq));
+		    printf("winend: %lu \n", otherdir->windowend);
+		    printf("syn:    %lu \n", otherdir->syn);
+		    printf("SEQ_GREATERTHAN winend: %d\n", 
+			   SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend));
+		    printf("SEQ_LESSTHAN init syn: %d\n", 
+			   SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn));
+		} 
+	     
+		if (/* rule 1 */
+		    (elapsed(ptp->last_time,current_time)/1000000 > nonreal_live_conn_interval)//(4*60)) - Using nonreal_live_conn_interval instead of the 4 mins heuristic
+		    || /* rule 2 */
+		    ((SYN_SET(ptcp)) && 
+		     (((thisdir->fin_count >= 1) ||
+		       (otherdir->fin_count >= 1)) ||
+		      ((thisdir->reset_count >= 1) ||
+		       (otherdir->reset_count >= 1))) &&
+		     (SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend) ||
+		      SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn)))
+		    || /* rule 3 */
+		    (SYN_SET(ptcp) &&
+		     (thisdir->syn_count > 1) &&
+		     (thisdir->syn != ntohl(ptcp->th_seq)))) {
 		
-		if (debug>1) {
-		    printf("%s: Marking %p %s<->%s INACTIVE (idle: %f sec)\n",
-			   ts2ascii(&current_time),
-			   ptp,
-			   ptp->a_endpoint, ptp->b_endpoint,
-			   elapsed(ptp->last_time,
-				   current_time)/1000000);
-		    if (debug > 3)
-			PrintTrace(ptp);
+		    if (debug>1) {
+			printf("%s: Marking %p %s<->%s INACTIVE (idle: %f sec)\n",
+			       ts2ascii(&current_time),
+			       ptp,
+			       ptp->a_endpoint, ptp->b_endpoint,
+			       elapsed(ptp->last_time,
+				       current_time)/1000000);
+			if (debug > 3)
+			    PrintTrace(ptp);
+		    }
+		
+		    /* we won't need this one anymore, remove it from the */
+		    /* hash table so we won't have to skip over it */
+		    ptp->inactive = TRUE;
+		
+		    if (debug > 4)
+			printf("Removing connection from hashtable:\
+                          FindTTP() calling SnapRemove()\n");
+		
+		    /* Removes connection snapshot from AVL tree */
+		    SnapRemove(pptph_head, ptph->addr_pair); 
+		
+		    break;
 		}
-
-		/* we won't need this one anymore, remove it from the */
-		/* hash table so we won't have to skip over it */
-		ptp->inactive = TRUE;
-		if (ptph == *pptph_head) {
-		    /* head of the list */
-		    *pptph_head = ptph->next;
-		} else {
-		    /* inside the list */
-		    ptph_last->next = ptph->next;
-		}
-		continue;
 	    }
-	   }
-
-	    /* move to head of access list (unless already there) */
-	    if (ptph != *pptph_head) {
-		ptph_last->next = ptph->next; /* unlink */
-		ptph->next = *pptph_head;     /* move to head */
-		*pptph_head = ptph;
-	    }
-
+	  
 	    if (run_continuously) 
-	      (*tcp_ptr) = (ptp_ptr *)ptph->ptp;
-
+		(*tcp_ptr) = (ptp_ptr *)ptph->ptp;
+	  
 	    *pdir = dir;
 	    return (ptp);
+	} else {  // WhichDir returned 0, meaning if it exists, it's deeper 
+	    conn_status = AVL_WhichDir(&tp_in,&ptph->addr_pair);	
+	    if (conn_status == LT)
+		ptph = ptph->left;
+	    else if (conn_status == RT)
+		ptph = ptph->right;
+	    else if (!conn_status)  {
+		fprintf(stderr, "WARNING!! AVL_WhichDir() should not return 0 if\n"
+				"\tWhichDir() didn't return A2B or B2A previously\n");
+		break;
+	    }
 	}
-	ptph_last = ptph;
     }
-
+   
+   
     /* Didn't find it, make a new one, if possible */
     if (0) {
-      printf("trace.c:FindTTP() calling MakePtpSnap()\n");
+	printf("trace.c:FindTTP() calling MakePtpSnap()\n");
     }
     ptph = MakePtpSnap();
+  
     if (run_continuously) {
-      ptp_ptr *ptr = (ptp_ptr *)MakePtpPtr();
-      ptr->prev = NULL;
+	ptp_ptr *ptr = (ptp_ptr *)MakePtpPtr();
+	ptr->prev = NULL;
 
-      if (live_conn_list_head == NULL) {
-	ptr->next = NULL;
-	live_conn_list_head = ptr;
-	live_conn_list_tail = ptr;
-      }
-      else {
-	ptr->next = live_conn_list_head;
-	live_conn_list_head->prev = ptr;
-	live_conn_list_head = ptr;
-      }
-      ptr->from = ptph;
-      ptr->ptp = NewTTP(pip, ptcp);
-      ptph->addr_pair = ptr->ptp->addr_pair;
-      ptph->ptp = (void *)ptr;
-      if (conn_num_threshold) {
-	active_conn_count++;
-	if (active_conn_count > max_conn_num) {
-	  ptp_ptr *last_ptr = live_conn_list_tail;
-	  live_conn_list_tail = last_ptr->prev;
-	  live_conn_list_tail->next = NULL;
-          RemoveConn(last_ptr);
-	  num_removed_tcp_pairs++;
-	  active_conn_count--;
-	  FreePtpPtr(last_ptr);
+	if (live_conn_list_head == NULL) {
+	    ptr->next = NULL;
+	    live_conn_list_head = ptr;
+	    live_conn_list_tail = ptr;
 	}
-      }
+	else {
+	    ptr->next = live_conn_list_head;
+	    live_conn_list_head->prev = ptr;
+	    live_conn_list_head = ptr;
+	}
+	ptr->from = ptph;
+	ptr->ptp = NewTTP(pip, ptcp);
+	ptph->addr_pair = ptr->ptp->addr_pair;
+	ptph->ptp = (void *)ptr;
+	if (conn_num_threshold) {
+	    active_conn_count++;
+	    if (active_conn_count > max_conn_num) {
+		ptp_ptr *last_ptr = live_conn_list_tail;
+		live_conn_list_tail = last_ptr->prev;
+		live_conn_list_tail->next = NULL;
+		RemoveConn(last_ptr);
+		num_removed_tcp_pairs++;
+		active_conn_count--;
+		FreePtpPtr(last_ptr);
+	    }
+	}
     }
     else {
-      tcp_pair *tmp = NewTTP(pip,ptcp);
-      ptph->addr_pair = tmp->addr_pair;
-      ptph->ptp = tmp;
+	tcp_pair *tmp = NewTTP(pip,ptcp);
+	ptph->addr_pair = tmp->addr_pair;
+	ptph->ptp = tmp;
     }
-    
-    /* put at the head of the access list */
-    ptph->next = *pptph_head;
-    *pptph_head = ptph;
+
+    /* To insert the new connection snapshot into the AVL tree */
+   
+    if (debug > 4)
+	printf("Inserting connection into hashtable:\
+             FindTTP() calling SnapInsert() \n");
+    SnapInsert(pptph_head, ptph);
+   
+    if (pse) {
+	/* search efficiency instrumentation */
+	++pse->num_connections;
+	if (depth > pse->max_depth)
+	    pse->max_depth = depth;
+	if (pse->num_connections > pse->max_connections)
+	    pse->max_connections = pse->num_connections;
+    }
+
 
     *pdir = A2B;
     if (run_continuously) {
-      *tcp_ptr = (ptp_ptr *)ptph->ptp;
-      return ((*tcp_ptr)->ptp);
+	*tcp_ptr = (ptp_ptr *)ptph->ptp;
+	return ((*tcp_ptr)->ptp);
     }
     else
-      return (tcp_pair *)(ptph->ptp);
+	return (tcp_pair *)(ptph->ptp);
 }
      
-/* Ramani: change this function for not only live_conn_list_head etc. even for nocontinuous */
-
 static void 
 UpdateConnLists(
 		ptp_ptr *tcp_ptr,
@@ -1013,51 +1232,25 @@ static void
 RemoveConn(
 	   const ptp_ptr *tcp_ptr)
 {
-  ptp_snap	*ptph;
-  ptp_ptr	*ptr;
   hash		hval;
-
-  if (0) {
-    printf("trace.c: RemoveConn(%p %s<->%s) called\n", 
-            tcp_ptr->ptp, tcp_ptr->ptp->a_endpoint, tcp_ptr->ptp->b_endpoint);
-  }
-
-  ModulesPerOldConn(tcp_ptr->ptp);
-
-  hval = tcp_ptr->ptp->addr_pair.hash % HASH_TABLE_SIZE;
-
-  if (ptp_hashtable[hval]) {
-    /* if the needed connection is at the beginning of the list, then remove it
-       and don't go trough the list */
-    ptr = (ptp_ptr *)ptp_hashtable[hval]->ptp;
-    if (ptr->ptp == tcp_ptr->ptp) {
-      ptph = ptp_hashtable[hval];
-      ptp_hashtable[hval] = ptp_hashtable[hval]->next;
-      RemoveTcpPair(tcp_ptr);
-      if (0) {
-	printf("trace.c:RemoveConn() calling FreePtpSnap()\n");
-      }
-      FreePtpSnap(ptph);
-
-      return;
-    }
-    /* the first ptp_snap on the list is not what we need  - go through 
-       the list */
-    for (ptph = ptp_hashtable[hval]; ptph->next; ptph = ptph->next) {
-      ptr = (ptp_ptr *)ptph->next->ptp;
-      if (ptr->ptp == tcp_ptr->ptp) {
-      /* delete ptph->next */
-	ptp_snap *temp_ptph = ptph->next;
-	ptph->next = temp_ptph->next;
-	RemoveTcpPair(tcp_ptr);
-	if (0) {
-	  printf("trace.c:RemoveConn() calling FreePtpSnap()\n");
-	}
-	FreePtpSnap(temp_ptph);
-	return;
-      }  
-    }
-  }
+   
+   if (0) {
+      printf("trace.c: RemoveConn(%p %s<->%s) called\n", 
+	     tcp_ptr->ptp, tcp_ptr->ptp->a_endpoint, tcp_ptr->ptp->b_endpoint);
+   }
+   
+   ModulesPerOldConn(tcp_ptr->ptp);
+   
+   hval = tcp_ptr->ptp->addr_pair.hash % HASH_TABLE_SIZE;
+   
+   /* Remove the connection snapshot from AVL tree */
+   if (debug > 4)
+     printf("Removing connection from hashtable:\
+             RemoveConn() calling SnapRemove()\n");
+   
+   SnapRemove(&ptp_hashtable[hval], tcp_ptr->ptp->addr_pair);
+   
+   RemoveTcpPair(tcp_ptr);
 }
 
 
@@ -1087,6 +1280,13 @@ RemoveTcpPair(
   if (ptp->a2b.owin_line) {
     free(ptp->a2b.owin_line);
   }
+  
+  if (show_rwinline) {
+    if (ptp->a2b.rwin_line) {
+      free(ptp->a2b.rwin_line);
+    }
+  }
+    
   if (ptp->a2b.owin_avg_line) {
     free(ptp->a2b.owin_avg_line);
   }
@@ -1096,6 +1296,13 @@ RemoveTcpPair(
   if (ptp->b2a.owin_line) {
     free(ptp->b2a.owin_line);
   }
+  
+  if (show_rwinline) {
+    if (ptp->b2a.rwin_line) {
+      free(ptp->b2a.rwin_line);
+    }
+  }
+  
   if (ptp->b2a.owin_avg_line) {
     free(ptp->b2a.owin_avg_line);
   }
@@ -1159,7 +1366,7 @@ dotrace(
     PLOTTER     tlinepl;
     int		dir;
     Bool	retrans;
-	Bool 	probe;
+    Bool 	probe;
     Bool	hw_dup = FALSE;	/* duplicate at the hardware level */
     Bool	ecn_ce = FALSE;
     Bool	ecn_echo = FALSE;
@@ -1420,7 +1627,6 @@ dotrace(
     if (ptcpo->ws != -1) {
 	thisdir->window_scale = ptcpo->ws;
 	thisdir->f1323_ws = TRUE;
-
     }
     if (ptcpo->tsval != -1) {
 	thisdir->f1323_ts = TRUE;
@@ -1438,6 +1644,12 @@ dotrace(
     }
     if (ptcpo->sack_count > 0) {
 	++thisdir->sacks_sent;
+    }
+
+    /* unless both sides advertised sack, we shouldn't see them, otherwise
+       we hope they actually send them */
+    if (!SYN_SET(ptcp) && (thisdir->fsack_req && otherdir->fsack_req)) {
+	thisdir->tcp_strain = otherdir->tcp_strain = TCP_SACK;
     }
 
     /* do data stats */
@@ -1467,6 +1679,10 @@ dotrace(
     ++ptp_save->packets;
     ++thisdir->packets;
 
+    /* If we are using window scaling, update the win_scaled_pkts counter */
+    if (thisdir->window_stats_updated_for_scaling)
+	++thisdir->win_scaled_pkts;
+    
     /* instantaneous throughput stats */
     if (graph_tput) {
 	DoThru(thisdir,tcp_data_length);
@@ -1540,7 +1756,14 @@ dotrace(
 								
 	/* Don't consider for rexmit, if the send window is 0 */
 	/* We are probably doing window probing.. */
-	if(otherdir->win_last==0 && otherdir->packets > 0){ 
+	/* Patch from Ulisses Alonso Camaro : Not treat the SYN segments
+	 * as probes, even though a zero window was advertised from the 
+	 * opposite direction */
+	if( (otherdir->win_last==0) && (otherdir->packets > 0) &&
+	   /* Patch from Ulisses Alonso Camaro : Not treat the SYN segments
+	    * as probes, even though a zero window was advertised from the 
+	    * opposite direction */
+            (!SYN_SET(ptcp)) ) {
 		probe=TRUE;
 		thisdir->num_zwnd_probes++;	
 		thisdir->zwnd_probe_bytes += tcp_data_length;
@@ -1582,9 +1805,32 @@ dotrace(
 		 (otherdir->syn_count == 1) )
 		 otherdir->rtt_3WHS=otherdir->rtt_last; 
 		 /* otherdir->rtt_last was set in the call to ack_in() */
-		
+	
+        otherdir->lastackno = th_ack;	
     }
 
+    /* LEAST */
+    if (thisdir->tcp_strain == TCP_RENO) {
+      if (thisdir->in_rto && tcp_data_length > 0) {
+        if (retrans_num_bytes>0 && th_seq < thisdir->recovered)
+          thisdir->event_retrans++;
+        if (IsRTO(thisdir, th_seq)) {
+          thisdir->recovered = thisdir->recovered_orig = thisdir->seq;
+          thisdir->rto_segment = th_seq;
+        }
+        if (!(retrans_num_bytes>0) && thisdir->ack <= thisdir->recovered_orig)
+          thisdir->recovered = th_seq;
+      }
+      if (otherdir->in_rto && ACK_SET(ptcp)) {
+        if (th_ack > otherdir->recovered) {
+          otherdir->LEAST -=
+            (otherdir->event_dupacks < otherdir->event_retrans)?
+             otherdir->event_dupacks:otherdir->event_retrans;
+          otherdir->in_rto = FALSE;
+        } else if (th_ack == otherdir->lastackno &&
+                   th_ack >= otherdir->rto_segment) otherdir->event_dupacks++;
+      }
+    }
 
     /* plot out-of-order segments, if asked */
     if (out_order && (from_tsgpl != NO_PLOTTER) && show_out_order) {
@@ -1600,7 +1846,16 @@ dotrace(
     /* stats for rexmitted data */
     if (retrans_num_bytes>0) {
 	retrans = TRUE;
+        /* for reno LEAST estimate */
+        if (thisdir->tcp_strain == TCP_RENO &&
+            !thisdir->in_rto && IsRTO(thisdir, th_seq)) {
+          thisdir->in_rto = TRUE;
+          thisdir->recovered = thisdir->recovered_orig = thisdir->seq;
+          thisdir->rto_segment = th_seq;
+          thisdir->event_retrans = 1; thisdir->event_dupacks = 0;
+        }
 	thisdir->rexmit_pkts += 1;
+	thisdir->LEAST++;
 	thisdir->rexmit_bytes += retrans_num_bytes;
 	/* don't color the SYNs and FINs, it's confusing, we'll do them */
 	/* differently below... */
@@ -1905,7 +2160,7 @@ dotrace(
 	    ++thisdir->ack_pkts;
 
         if (run_continuously) {
-            UpdateConnLists(tcp_ptr, ptcp); /*Ramani: Call this even in nocontinuous mode */
+            UpdateConnLists(tcp_ptr, ptcp); 
         }
 	return(ptp_save);
     }
@@ -1917,30 +2172,42 @@ dotrace(
 	if (eff_win > thisdir->win_max)
 	    thisdir->win_max = eff_win;
 
-	/* If we *are* going to use window scaling, ignore the window
-	size that appeared in SYN packet as being counted as win_min 
-	for this direction. 
-	Instead, treat the smallest, window-scaled, window advertisement
-	as win_min. 
+	/* If we *are* going to use window scaling,
+	 * i.e., if we saw both SYN segments of the connection requesting
+	 * window scaling, we flush out all the window stats we gathered till
+	 * now from the SYN segments.
+	 * 
+	 * o We set the flag window_stats_updated_for_scaling to TRUE
+	 * o Set win_min and win_max to the value found in this first
+	 *   window-scaled segment
+	 * o Reset win_tot value too, as this is used to calculate the
+	 *   average window advertisement seen in this direction at the end
+	 * o We also use the field win_scaled_pkts for this purpose, so that
+	 *   in the end we calculate
+	 * 
+	 *   avg_win_adv = win_tot/win_scaled_pkts // Refer output.c
+	 * 
+	 * Note : for a connection that doesn't use window scaling,
+	 * 
+	 *   avg_win_adv = win_tot/packets        // Refer again to output.c
+	 */
 
-	We have a flag "window_stats_updated_for_scaling" 
-	in either direction of the connection, that gets turned ON, the 
-	moment we find that both sides have agreed to use window
-	scaling and this is the first packet in either direction
-	with scaled window. */
-	   
 	if ( (eff_win>0) && 
 	     ( thisdir->f1323_ws && otherdir->f1323_ws && !SYN_SET(ptcp) &&
-		   (thisdir->window_scale > 0) &&
-		   !thisdir->window_stats_updated_for_scaling  
-	     ) ) {
-			thisdir->window_stats_updated_for_scaling=TRUE;
-			thisdir->win_min = eff_win;
+		!thisdir->window_stats_updated_for_scaling  
+	     ) 
+	   ) {
+	     thisdir->window_stats_updated_for_scaling=TRUE;
+	     thisdir->win_min = thisdir->win_max = eff_win;
+	     thisdir->win_tot = 0;
+	     thisdir->win_scaled_pkts = 1;
 	}
 	else if ((eff_win > 0) &&
 	    ((thisdir->win_min == 0) ||
 	     (eff_win < thisdir->win_min)))
 	    thisdir->win_min = eff_win;
+	
+	/* Add the window advertisement to win_tot */
 	thisdir->win_tot += eff_win;
     }
 
@@ -2041,7 +2308,40 @@ dotrace(
 	    ++thisdir->num_sacks;
 	    if (ptcpo->sack_count > thisdir->max_sack_blocks) 
 		thisdir->max_sack_blocks = ptcpo->sack_count;
+
+	/* also see if any of them are DSACKS - weddy */
+	/* eventually may come back and fix this, what if we+++++
+	   didn't see all the rexmits and so LEAST wesn't set
+	   high enough, now it's too low */
+	    /* case 1, first block under cumack */
+	    if (ptcpo->sacks[0].sack_right <= th_ack) {
+	        thisdir->num_dsacks++;
+	        if (otherdir->LEAST > 0) otherdir->LEAST--;
+	    /* case 2, first block inside second */
+	    } else if (ptcpo->sack_count > 1) {
+	        if (ptcpo->sacks[0].sack_right <= ptcpo->sacks[1].sack_right
+	            && ptcpo->sacks[0].sack_left >= ptcpo->sacks[1].sack_left)
+	        {
+	            thisdir->num_dsacks++;
+	            if (otherdir->LEAST > 0) otherdir->LEAST--;
+	    /* case 3, first and second block overlap */
+	        } else if ((ptcpo->sacks[0].sack_left <=
+	                    ptcpo->sacks[1].sack_left &&
+	                  ptcpo->sacks[0].sack_right >
+	                    ptcpo->sacks[1].sack_left) ||
+                         (ptcpo->sacks[0].sack_right >=
+	                    ptcpo->sacks[1].sack_right &&
+	                  ptcpo->sacks[0].sack_left <
+	                    ptcpo->sacks[1].sack_right)) {
+                    thisdir->num_dsacks++;
+	            if (otherdir->LEAST > 0) otherdir->LEAST--;
+	        }
+	    }
+	    /* if we saw any dsacks from the other guy, we'll assume he did
+               it on purpose and is a dsack tcp */
+            if (thisdir->num_dsacks > 0) thisdir->tcp_strain = TCP_DSACK;
 	}
+
 	/* draw sacks, if appropriate */
 	if (to_tsgpl != NO_PLOTTER && show_sacks
 	    && (ptcpo->sack_count > 0)) {
@@ -2157,6 +2457,10 @@ dotrace(
 	/* graph owin */
 	if (thisdir->owin_plotter != NO_PLOTTER) {
 	    extend_line(thisdir->owin_line, current_time, owin);
+	    if (show_rwinline) {
+	      extend_line(thisdir->rwin_line, current_time, 
+			  otherdir->win_last);
+	    }
 	    extend_line(thisdir->owin_avg_line, current_time,
 			(thisdir->owin_count?(thisdir->owin_tot/thisdir->owin_count):0)); 
 	}
@@ -2173,10 +2477,12 @@ dotrace(
 void
 trace_done(void)
 {
-    tcp_pair *ptp;
-    FILE *f_passfilter = NULL;
-    int ix;
-
+  tcp_pair *ptp;
+  FILE *f_passfilter = NULL;
+  int ix;
+  static int count = 0;
+  Bool incomplete_pkt_capture = FALSE;
+  
   if (!run_continuously) {
     if (!printsuppress) {
 	if (tcp_trace_count == 0) {
@@ -2200,9 +2506,45 @@ trace_done(void)
 	if (!warn_printtrunc)
 	    fprintf(stdout,"%s\t(use -w option to show details)\n", comment);
     }
-    if (debug>1)
-	fprintf(stdout,"%saverage TCP search length: %d\n",
-		comment, search_count / tcp_packet_count);
+
+    /* generate statistics for data storage efficiency */
+    if (debug>1) {
+	int h;
+	int occupied_buckets = 0;
+	int max_bucket_occupancy = 0;
+	int max_searches = 0;
+	int max_depth = 0;
+	int max_comparisons = 0;
+	float max_searches_compare = 0.0;
+	fprintf(stdout,"%sTotal searches: %u\n", comment, tcp_packet_count);
+	fprintf(stdout,"%s  Total comparisons: %u\n", comment, search_count);
+	fprintf(stdout,"%s  Average compares/search: %.2f\n",
+		comment, (float)search_count / (float)tcp_packet_count);
+	fprintf(stdout,"%sHash table size: %u\n", comment, HASH_TABLE_SIZE);
+	for (h=0; h < HASH_TABLE_SIZE; ++h) {
+	    struct search_efficiency *pse = &hashtable_efficiency[h];
+	    float searches_compare;
+	    if (pse->num_connections > 0)
+		++occupied_buckets;
+	    if (pse->max_connections > max_bucket_occupancy)
+		max_bucket_occupancy = pse->max_connections;
+	    if (pse->num_searches > max_searches)
+		max_searches = pse->num_searches;
+	    if (pse->num_comparisons > max_comparisons)
+		max_comparisons = pse->num_comparisons;
+	    if (pse->max_depth > max_depth)
+		max_depth = pse->max_depth;
+	    searches_compare = (float) pse->num_comparisons / (float) pse->num_searches;
+	    if (searches_compare > max_searches_compare)
+		max_searches_compare = searches_compare;
+	}
+	fprintf(stdout,"%s    Occupied hash buckets: %u\n", comment, occupied_buckets);
+	fprintf(stdout,"%s    Max entries/bucket: %u\n", comment, max_bucket_occupancy);
+	fprintf(stdout,"%s    Max searches/bucket: %u\n", comment, max_searches);
+	fprintf(stdout,"%s    Max comparisons/bucket: %u\n", comment, max_comparisons);
+	fprintf(stdout,"%s    Max avg compares/search: %.2f\n", comment, max_searches_compare);
+	fprintf(stdout,"%s    Max tree depth: %u\n", comment, max_depth);
+    }
 
     /* complete the "idle time" calculations using NOW */
     for (ix = 0; ix <= num_tcp_pairs; ++ix) {
@@ -2234,8 +2576,7 @@ trace_done(void)
   }
 
     /* if we're filtering, see which connections pass */
-    if (filter_output) {
-	static int count = 0;
+    if (filter_output || ignore_non_comp) {
 
 	/* file to dump matching connection numbers into */
 	f_passfilter = fopen(PASS_FILTER_FILENAME,"w+");
@@ -2244,24 +2585,25 @@ trace_done(void)
 	    exit(-1);
 	}
 
-      if (!run_continuously) {
-	/* mark the connections to ignore */
-	for (ix = 0; ix <= num_tcp_pairs; ++ix) {
-	    ptp = ttp[ix];
-	    if (PassesFilter(ptp)) {
-		if (++count == 1)
-		    fprintf(f_passfilter,"%d", ix+1);
-		else
-		    fprintf(f_passfilter,",%d", ix+1);
-	    } else {
-		/* else ignore it */
-		ptp->ignore_pair = TRUE;
+      if (filter_output) {
+	 if (!run_continuously) {
+	    /* mark the connections to ignore */
+	    for (ix = 0; ix <= num_tcp_pairs; ++ix) {
+	       ptp = ttp[ix];
+	       if (PassesFilter(ptp)) {
+		  if (++count == 1)
+		      fprintf(f_passfilter,"%d", ix+1);
+		  else
+		      fprintf(f_passfilter,",%d", ix+1);
+	       } else {
+		  /* else ignore it */
+		  ptp->ignore_pair = TRUE;
+	       }
 	    }
-	}
+	 }
       }
     }
-
-
+   
   if (!run_continuously) {
     /* print each connection */
     if (!printsuppress) {
@@ -2287,20 +2629,45 @@ trace_done(void)
 		       if (ix > 0)
 			 fprintf(stdout,"================================\n");
 		       fprintf(stdout,"TCP connection %d:\n", ix+1);
+		       
 		    }
 		    PrintTrace(ptp);
 		}
-	    }
+	       /* This piece of code dumps PF file when filtered with '-c' 
+		  option, this option says to select only complete connections.
+		  The PF file will contain the connection numbers which are
+		  selected to be complete */
+	       if (ignore_non_comp)
+		   if (ConnComplete(ptp)) {
+		      if (++count == 1)
+			  fprintf(f_passfilter, "%d", ix+1);
+		      else
+			  fprintf(f_passfilter, ",%d", ix+1);
+		   }
+	       /******************************/
+	      
+	      /* If we are extracting packet contents (-e option), we shall check to
+	       * see if we missed segments during packet capture causing the
+	       * X2Y_contents.dat files that we drop to contain voids in them.
+	       * We shall emit a warning upon such an event below. */
+	      if (save_tcp_data && !incomplete_pkt_capture && MissingData(ptp)) 
+		incomplete_pkt_capture = TRUE;
+	    }	  
 	}
     }
   }
   
     /* if we're filtering, close the file */
-    if (filter_output) {
+    if (filter_output || ignore_non_comp) {
 	fprintf(f_passfilter,"\n");
 	fclose(f_passfilter);
     }
 
+    if (incomplete_pkt_capture) {
+      fprintf(stderr, "\nWarning : some extracted files are incomplete!\n");
+      fprintf(stderr, "          Please see -l output for more detail.\n");
+    }
+  
     if ((debug>2) && !nonames)
 	cadump();
 }
@@ -3173,4 +3540,86 @@ udp_cksum_valid(
     }
     
     return(udp_cksum(pip,pudp,plast) == 0);
+}
+
+/* Did we miss any segment during packet capture? */
+static Bool
+MissingData(tcp_pair *ptp)
+{
+  tcb *pab = &ptp->a2b;
+  tcb *pba = &ptp->b2a;
+  
+  u_llong stream_length_pab=0, stream_length_pba=0;
+  u_long pab_last, pba_last;
+  
+  /* If packets were truncated (due to shorter snaplen) we miss data */
+  if ( (pab->trunc_bytes > 0) || (pba->trunc_bytes > 0) )
+    return TRUE;
+  
+  /* Also, if we missed whole segments (pcap dozing off) we miss data.
+   * The following code yanked off from output.c handles seq-space
+   * wrap around - Mani
+   * 
+   * Compare to theoretical length of the stream (not just what
+   * we saw) using the SYN and FIN
+   * Seq. Space wrap around calculations:
+   * Calculate stream length using last_seq_num seen, first_seq_num
+   * seen and wrap_count.
+   * first_seq_num = syn
+   * If reset_set, last_seq_num = latest_seq
+   *          else last_seq_num = fin
+   */
+    
+    pab_last = (pab->reset_count>0)?pab->latest_seq:pab->fin;    
+    pba_last = (pba->reset_count>0)?pba->latest_seq:pba->fin;
+    
+    /* calculating stream length for direction pab */
+    if ((pab->syn_count > 0) && (pab->fin_count > 0)) {
+	if (pab->seq_wrap_count > 0) {
+	    if (pab_last > pab->syn) {
+		stream_length_pab = pab_last + (MAX_32 * pab->seq_wrap_count) - pab->syn - 1;
+	    }
+	    else {
+		stream_length_pab = pab_last + (MAX_32 * (pab->seq_wrap_count+1)) - pab->syn - 1;
+	    }
+	}
+	else {
+	    if (pab_last > pab->syn) {
+		stream_length_pab = pab_last - pab->syn - 1;
+	    }
+	    else {
+		stream_length_pab = MAX_32 + pab_last - pab->syn - 1;
+	    }
+	}
+    }
+
+    /* calculating stream length for direction pba */
+    if ((pba->syn_count > 0) && (pba->fin_count > 0)) {
+	if (pba->seq_wrap_count > 0) {
+	    if (pba_last > pba->syn) {
+		stream_length_pba = pba_last + (MAX_32 * pba->seq_wrap_count) - pba->syn - 1;
+	    }
+	    else {
+		stream_length_pba = pba_last + (MAX_32 * (pba->seq_wrap_count+1)) - pba->syn - 1;
+	    }
+	}
+	else {
+	    if (pba_last > pba->syn) {
+		stream_length_pba = pba_last - pba->syn - 1;
+	    }
+	    else {
+		stream_length_pba = MAX_32 + pba_last - pba->syn - 1;
+	    }
+	}
+    }
+
+    /* Alright, now that we have the stream length in either direction,
+     * if the stream length is not equal to the total unique bytes we 
+     * seen, we must have missed whole segments
+     */
+     if ( (stream_length_pab != pab->unique_bytes) ||
+	  (stream_length_pba != pba->unique_bytes) )
+       return TRUE;
+
+  return FALSE;
 }

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,10 +52,11 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/snoop.c,v 5.13 2002/08/30 19:53:10 sdo Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/snoop.c,v 5.15 2003/11/19 14:38:05 sdo Exp $";
 
 
 /* 
@@ -63,7 +65,6 @@ static char const rcsid[] =
  */
 
 
-#include "tcptrace.h"
 
 
 #ifdef GROK_SNOOP
@@ -345,6 +346,7 @@ pread_snoop(
 	} else {
 	    printf("snoop hardware type %d not understood\n",
 		   snoop_mac_type);
+	   
 	    exit(-1);
 	}
 
@@ -428,6 +430,7 @@ Tcptrace is only known to work with version 2\n",
 	if (debug)
 	    printf("Snoop hw type: %ld (unknown)\n", buf.mac_type);
 	printf("snoop hardware type %ld not understood\n", buf.mac_type);
+       
 	exit(-1);
     }
 

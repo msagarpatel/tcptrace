@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,14 +52,14 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/dyncounter.c,v 1.6 2001/05/31 21:26:42 sdo Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/dyncounter.c,v 1.7 2003/11/19 14:38:01 sdo Exp $";
 
 /* dynamic counters/arrays */
 /* uses a 10-ary tree to manage a sparse counter space */
-#include "tcptrace.h"
 #include "dyncounter.h"
 
 

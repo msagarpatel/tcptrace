@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,16 +52,16 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/filter.c,v 5.18 2001/08/01 20:47:59 mramadas Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/filter.c,v 5.20 2003/11/19 14:38:02 sdo Exp $";
 
 
 #include <stdio.h>
 #include <stdarg.h>
 
-#include "tcptrace.h"
 #include "filter.h"
 #include "filter_vars.h"
 
@@ -356,6 +357,14 @@ MakeOneBinaryNode(
 	    break;
 	}
 
+	/* Allow STRING variables like hostname, portname to be used as in
+	 * -f'hostname=="masaka.cs.ohiou.edu"'
+	 */
+	if ((pf_left->vartype == V_STRING) && (pf_right->vartype == V_STRING)){
+	     pf->vartype = V_BOOL;
+	     break;
+	}
+
 	/* ... else, normal numeric stuff */
 	if ((pf_left->vartype != V_LLONG) && (pf_left->vartype != V_ULLONG)) {
 	    fprintf(stderr,"Relational operator applied to non-number: ");
@@ -508,7 +517,8 @@ MakeStringConstNode(
     struct filter_node *pf;
 
     pf = MallocZ(sizeof(struct filter_node));
-
+     
+    pf->op = OP_CONSTANT;
     pf->vartype = V_STRING;
     pf->un.constant.string = val;
 
@@ -831,6 +841,9 @@ LookupVar(
 		break;
 	      case V_IPADDR:	
 		pf->vartype = V_IPADDR;
+		break;
+	      case V_STRING:
+		pf->vartype = V_STRING;
 		break;
 	      default:
 		pf->vartype = pf->vartype; 
@@ -1457,7 +1470,7 @@ EvalConstant(
 
       case V_STRING:	
 	pres->vartype = V_STRING;
-	pres->val.string = Var2String(ptp,pf);
+	pres->val.string = pf->un.constant.string;
 	break;
 
       case V_BOOL:

@@ -497,3 +497,158 @@ Fixed a bug in the processing of IPv6 extension headers in ipv6.c:findheader()
 -----
 Fixed the processing of duplicate ACKs as in the BSD stack to count towards
 the 3 dupacks required for fast-retransmit. 
+
+6.4.3 : 17 MAY 2003 Mani
+-----
+Fixed the bug in processing IPv6 extension headers in ipv6.c:gethdrlength()
+based on the patch sent by Thomas Bohnert.
+
+6.4.4 : 19 MAY 2003 Wes
+-----
+Added dsack counter to long output format and dsack sample input and output
+
+6.4.5 : 13 JUN 2003 Mani
+-----
+Fixed bug in the calculation of the "avg win adv" field, so that now avg.
+falls in between min and max.
+
+6.4.6 :  1 JUL 2003 Mani
+-----
+Changes made to make gcc-3.3 make lesser warnings with tcptrace.
+
+6.4.7 :  1 AUG 2003 Mani
+-----
+Made the --csv/--tsv/--sv options' implementation better.
+
+6.4.8 :  4 AUG 2003 Mani
+-----
+Fixed a bug in traffic module, so that the number of open connections are
+printed correct in the traffic_stats.dat file, even without giving 
+the -C option.
+
+6.4.9 : 6 AUG 2003 Jitesh
+-----
+
+Included the code to recognize Endace ERF (Extensible Record Format), sent
+by Jesper Peterson.
+
+6.4.10: 14 Aug 2003 Jitesh
+------
+
+Included the code to recognize the PPP (Point-to-Point) input file format,
+sent by Yann Samama.
+
+6.4.11: 14 Aug 2003 Mani
+------
+
+Fixing the bug with filtering connections based on hostname/portname with
+the -f option.
+
+6.4.12: 15 Sep 2003 Jitesh
+------
+
+Included the code to generate PF file with '-c' option. Error messages are
+made more logical when generating error messages for unsupported input and
+captured file formats.
+
+6.4.13: 7 OCT 2003 Mani
+------
+
+Applied patch from Ulisses Alonso Camaro that lets SYN segments following
+zero window advertisements from the opposite direction *not* be treated
+as window probes. Also fixed a compilation problem due to the previous
+patch by Jitesh (moved the "static int count=0" line to the beginning of
+trace_done() function in trace.c).
+
+6.4.14: 12 OCT 2003 Mani
+------
+
+Fixed bunch of gcc3.3.1 warnings in erf.c (unused variable warning), netm.c,
+ns.c (dereferencing type-punned pointer warnings).
+
+6.4.15: 21 OCT 2003 Mani
+------
+
+Fixed the typo(?) that made us have a #ifndef __WIN32 to #ifdef __WIN32 in
+ipv6.h for the in6_addr structure definition.
+
+Patching in changes to mod_http.c making it more robust to print
+information in cases where connections get closed with RST instead of
+FINs and other trivia based on Yufei Wang's patch.
+
+6.4.16: 31 OCT 2003 Mani
+------
+
+Applying the patch courtesy John Heffner that displays a yellow rwnd line
+in owin plots. Also adding --showrwinline option to control the yellow
+rwnd line, in case it gets annoying.
+
+Also fixing trivia (type conversions for certain uint to int, etc.) in 
+output.c to keep gcc3.3 from warning on MacOSX 10.3.
+
+6.6.0: 4 Nov 2003 Mani
+-----
+
+All the changes you see above in the 6.4.x series are part of the release
+6.6.0.
+
+6.6.1: 25 Nov 2003 Mani
+-----
+
+Includes a bugfix by Ramani, that restored the old semantics of the
+SameConn() and WhichDir() functions and includes
+new functions AVL_CheckHash() and AVL_CheckDir() to support the AVL tree
+hash-bucket implementation.
+
+Includes a fix to ns.c to correctly read port numbers; added
+functionality to track LEAST variables and reno LEAST algorithm to trace.c;
+added isRTO() in rexmit.c : all by Wes.
+
+6.6.2: 25 Feb 2004 Mani & Jitesh
+-----
+
+Fixed tcpdump.c to trace IP packets buried under VLAN headers.
+
+6.6.3: 1 Mar 2004 Mani
+-----
+
+Added a function MissingData() in trace.c to check if TCP segments were
+missing or were truncated when the -e option is given to extract
+contents.
+
+6.6.4: 4 Mar 2004 Mani
+-----
+
+Adding in the INBOUNDS module into the main tcptrace development tree.
+It is NOT built in by default though; you need to uncomment a line in
+Makefile.in to enable it.
+
+6.6.5: 1 Oct 2004 Mani
+-----
+
+* Josh fixed the file format searching order, putting tcpdump format to
+the end in file_formats.h as a work around for libpcap brokenness.
+
+* Fixed Mfopen() in mfiles.c to open content data files that we
+generate in "binary" mode - by changing fopen mode from "w" to "wb+" and "a"
+to "ab+". The 'b' is dummy in UNIX systems, but seems to have some
+semantic in the Windows world.
+
+* Fixed QuitSig() function in tcptrace.c by adding a call to
+udptrace_done() so that we print out UDP connection stats too (if one
+were piping live tcpdump traffic to tcptrace and "ctrl-c"-ed it in the
+middle, for example). On the way, also fixed the arbitrary "buf[4096]"
+declaration to be written correctly as "buf[COMP_HDR_SIZE]" in the
+PipeFitting() function. 
+
+6.6.6: 7 Oct 2004 Mani
+-----
+
+Fixed the callback function in tcpdump.c to prevent garbage data from
+getting into the ip_buf buffer.
+
+6.6.7: 4 Nov 2004 Mani with help from Dr.Ostermann & Josh
+-----
+
+Fixed bugs found in the AVL search function that had major bugs /
+complexity issues. 

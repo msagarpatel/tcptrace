@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,8 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_config[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/config.h,v 5.3 2001/05/31 20:54:58 sdo Exp $";
+static char const GCC_UNUSED rcsid_config[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/config.h,v 5.4 2003/11/19 14:38:06 sdo Exp $";
 
 
 /* define GROK_SNOOP if you want tcptrace to understand the output

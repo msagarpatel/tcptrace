@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,10 +52,11 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/etherpeek.c,v 5.7 2002/06/21 09:56:26 alakhian Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/etherpeek.c,v 5.8 2003/11/19 14:38:02 sdo Exp $";
 
 
 /****************************************
@@ -66,7 +68,6 @@ static char const rcsid[] =
 ****************************************/
   
 
-#include "tcptrace.h"
 
 
 #ifdef GROK_ETHERPEEK

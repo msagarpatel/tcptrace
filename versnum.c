@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,9 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_versnum[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/versnum.c,v 5.4 2002/06/19 05:28:23 alakhian Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED rcsid_versnum[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/versnum.c,v 5.5 2003/11/19 14:38:06 sdo Exp $";
 
 #include <stdio.h>
 #include <stdlib.h>

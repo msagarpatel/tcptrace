@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,8 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_ipv6[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.h,v 5.10 2002/06/21 09:56:26 alakhian Exp $";
+static char const GCC_UNUSED rcsid_ipv6[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.h,v 5.12 2003/11/19 14:38:07 sdo Exp $";
 
 
 /*
@@ -95,7 +96,7 @@ static char const rcsid_ipv6[] =
 /*
  * IPv6 address data structure.
  */
-#ifndef __WIN32
+#ifdef __WIN32
 typedef struct in6_addr {
 	u_char	s6_addr[16];	/* IPv6 address */
 } in6_addr;

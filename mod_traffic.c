@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,12 +52,12 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid[] =
-   "$Header: /usr/local/cvs/tcptrace/mod_traffic.c,v 5.14 2001/08/01 20:47:59 mramadas Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED rcsid[] =
+   "$Header: /usr/local/cvs/tcptrace/mod_traffic.c,v 5.16 2003/11/19 14:38:03 sdo Exp $";
 
 #ifdef LOAD_MODULE_TRAFFIC
 
-#include "tcptrace.h"
 #include "mod_traffic.h"
 
 
@@ -249,7 +250,7 @@ static void
 CheckPortNum(
     unsigned portnum)
 {
-    if ((portnum <= 0) || (portnum >= NUM_PORTS)) {
+    if (portnum >= NUM_PORTS) {
 	fprintf(stderr,"mod_traffic: Invalid port number '%d'\n", portnum);
 	traffic_usage();
 	exit(-1);
@@ -592,6 +593,7 @@ traffic_read(
 	    pci->wasopen = 1;
 	    pci->isopen = 1;
 	    ++num_opens;
+	    ++ttl_num_opens;
 	    ++open_conns;
 
 	    /* instantaneous opens and closes */
@@ -835,7 +837,12 @@ AgeTraffic(void)
 	extend_line(line_open_conns,current_time, open_conns);
 
 	/* reset interval counters */
-	ttl_num_opens += num_opens;
+	 
+// Counting ttl_num_opens instantaneously as and when num_opens is incremented,
+// so that ttl_num_opens is printed properly in traffic_stats.dat even 
+// when the -C(openclose) option is not given.
+// Hence commenting off the following line. - Mani, 4 Aug 2003.
+//	ttl_num_opens += num_opens;
 	ttl_num_closes += num_closes;
 	num_opens = 0;
 	num_closes = 0;

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,13 +52,13 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/tcpdump.c,v 5.17 2003/03/06 19:02:02 mramadas Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcpdump.c,v 5.24 2004/10/07 20:07:30 mramadas Exp $";
 
 #include <stdio.h>
-#include "tcptrace.h"
 
 #ifdef GROK_TCPDUMP
 
@@ -77,7 +78,7 @@ static pcap_t *pcap;
 /* Interaction with pcap */
 static struct ether_header eth_header;
 #define EH_SIZE sizeof(struct ether_header)
-static int *ip_buf;  /* [IP_MAXPACKET/sizeof(int)] */
+static char *ip_buf;  /* [IP_MAXPACKET] */
 static struct pcap_pkthdr *callback_phdr;
 static void *callback_plast;
 
@@ -90,7 +91,12 @@ static int callback(
     int type;
     int iplen;
     static int offset = -1;
-
+  
+    struct vlanh{
+      tt_uint16 vlan_num;
+      tt_uint16 vlan_proto;
+    } *vlanhptr;
+  
     iplen = phdr->caplen;
     if (iplen > IP_MAXPACKET)
 	iplen = IP_MAXPACKET;
@@ -106,72 +112,121 @@ static int callback(
 	/* for some reason, the windows version of tcpdump is using */
 	/* this.  It looks just like ethernet to me */
       case PCAP_DLT_EN10MB:
-	memcpy(&eth_header,buf,EH_SIZE);  /* save ether header */
-	memcpy(ip_buf,buf+EH_SIZE,iplen);
-	callback_plast = (char *)ip_buf+iplen-EH_SIZE-1;
+	offset = find_ip_eth(buf); /* Here we check if we are dealing with Straight Ethernet encapsulation or PPPoE */
+	memcpy(&eth_header, buf, EH_SIZE); /* save ether header */
+	switch (offset)
+	{
+		case EH_SIZE: /* straight Ethernet encapsulation */
+			memcpy((char *)ip_buf,buf+offset,iplen-offset);
+			callback_plast = ip_buf+iplen-offset-1;
+			break;
+		case PPPOE_SIZE: /* PPPoE encapsulation */
+			/* we use a fake ether type here */
+			eth_header.ether_type = htons(ETHERTYPE_IP);
+			memcpy((char *)ip_buf,buf+offset,iplen-offset);
+			callback_plast = ip_buf+iplen-offset-1;
+			break;
+	        case -1: /* Not an IP packet */
+	                 /* Let's check if it is a VLAN header that
+			  * caused us to receive -1, and if we had an IP
+			  * packet buried inside */
+	                if (eth_header.ether_type == htons(ETHERTYPE_VLAN)) {
+			  vlanhptr=(struct vlanh*) (buf+EH_SIZE);
+			  if ( (ntohs(vlanhptr->vlan_proto) == ETHERTYPE_IP) ||
+			       (ntohs(vlanhptr->vlan_proto) == ETHERTYPE_IPV6)
+			     ) {
+			    offset=EH_SIZE+sizeof(struct vlanh);
+			    memcpy((char *)ip_buf,buf+offset,iplen-offset);
+			    callback_plast = ip_buf+iplen-offset-1;
+			    /* Set ethernet type as whatever followed the dumb
+			     * VLAN header to prevent the rest of the code
+			     * from ignoring us.
+			     */
+			    eth_header.ether_type=vlanhptr->vlan_proto;
+			    break;
+			    }
+			}	  
+			return (-1);
+		default: /* should not be used, but we never know ... */
+			return (-1);
+	}
 	break;
       case PCAP_DLT_IEEE802:
 	/* just pretend it's "normal" ethernet */
 	offset = 14;		/* 22 bytes of IEEE cruft */
 	memcpy(&eth_header,buf,EH_SIZE);  /* save ether header */
-	memcpy(ip_buf,buf+offset,iplen);
+	memcpy(ip_buf,buf+offset,iplen-offset);
 	callback_plast = (char *)ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_SLIP:
-	memcpy(ip_buf,buf+16,iplen);
+	memcpy(ip_buf,buf+16,iplen-16);
 	callback_plast = (char *)ip_buf+iplen-16-1;
+	break;
+      case PCAP_DLT_PPP:
+	/* deals with raw PPP and also with HDLC PPP frames */
+	offset = find_ip_ppp(buf);
+	if (offset < 0) /* Not an IP packet */
+		return (-1);
+	memcpy((char *)ip_buf,buf+offset,iplen-offset);
+	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_FDDI:
 	if (offset < 0)
 	      offset = find_ip_fddi(buf,iplen);
 	if (offset < 0)
 	      return(-1);
-	memcpy((char *)ip_buf,buf+offset,iplen);
+	memcpy((char *)ip_buf,buf+offset,iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_NULL:
 	/* no phys header attached */
 	offset = 4;
-	memcpy((char *)ip_buf,buf+offset,iplen);
+	memcpy((char *)ip_buf,buf+offset,iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_ATM_RFC1483:
 	/* ATM RFC1483 - LLC/SNAP ecapsulated atm */
-	memcpy((char *)ip_buf,buf+8,iplen);
+	memcpy((char*)ip_buf,buf+8,iplen-8);
 	callback_plast = ip_buf+iplen-8-1;
 	break;
       case PCAP_DLT_RAW:
 	/* raw IP */
 	offset = 0;
-	memcpy((char *)ip_buf,buf+offset,iplen);
+	memcpy((char *)ip_buf,buf+offset,iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_LINUX_SLL:
 	/* linux cooked socket */
 	offset = 16;
-	memcpy((char *)ip_buf, buf+offset, iplen);
+	memcpy((char *)ip_buf, buf+offset, iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       // Patch sent by Brandon Eisenamann to passby 802.11, LLC/SNAP
       // and Prism2 headers to get to the IP packet.
       case PCAP_DLT_IEEE802_11:
 	offset=24+8;// 802.11 header + LLC/SNAP header
-	memcpy((char *)ip_buf, buf+offset, iplen);
+	memcpy((char *)ip_buf, buf+offset, iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_IEEE802_11_RADIO:
 	offset=64+24;//WLAN header + 802.11 header
 	memcpy(&eth_header,buf,EH_SIZE); // save ethernet header
-	memcpy((char *)ip_buf, buf+offset, iplen);
+	memcpy((char *)ip_buf, buf+offset, iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
 	break;
       case PCAP_DLT_PRISM2:
 	offset=144+24+8; // PRISM2+IEEE 802.11+ LLC/SNAP headers
-	memcpy((char *)ip_buf, buf+offset, iplen);
+	memcpy((char *)ip_buf, buf+offset, iplen-offset);
 	callback_plast = ip_buf+iplen-offset-1;
+	break;
+      case PCAP_DLT_C_HDLC:
+	offset=4;
+	memcpy((char *)ip_buf, buf+offset, iplen-offset);
+	callback_plast = (char *)ip_buf+iplen-offset-1;
 	break;
       default:
 	fprintf(stderr,"Don't understand link-level format (%d)\n", type);
+
 	exit(1);
     }
     
@@ -280,7 +335,7 @@ pread_f *is_tcpdump(char *filename)
     /* check the phys type (pretend everything is ethernet) */
     memset(&eth_header,0,EH_SIZE);
     switch (type = pcap_datalink(pcap)) {
-case 100:
+      case 100:
       case PCAP_DLT_EN10MB:
 	/* OK, we understand this one */
 	physname = "Ethernet";
@@ -292,6 +347,10 @@ case 100:
       case PCAP_DLT_SLIP:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
 	physname = "Slip";
+	break;
+      case PCAP_DLT_PPP:
+	eth_header.ether_type = htons(ETHERTYPE_IP);
+	physname = "PPP or HDLC PPP";
 	break;
       case PCAP_DLT_FDDI:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
@@ -326,9 +385,16 @@ case 100:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
 	physname = "PRISM2";
 	break;
+      case PCAP_DLT_C_HDLC:
+	eth_header.ether_type = htons(ETHERTYPE_IP);
+	physname = "Cisco HDLC";
+	break;
       default:
-	if (debug)
-	    fprintf(stderr,"is_tcpdump: I think it's tcpdump, but I don't understand link format (%d)\n", type);
+        fprintf(stderr,"tcptrace did not understand link format (%d)!\n",type);
+        fprintf(stderr,
+		"\t If you can give us a capture file with this link format\n\
+\t or even better, a patch to decipher this format, we shall add it in, \n\
+\t in a future release.\n");
 	rewind(stdin);
 	return(NULL);
     }

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,15 +52,16 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
 
 /*
  * Kevin Lahey (kml@patheticgeek.net)
  */
 
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/ns.c,v 1.11 2002/08/09 19:32:08 weddy Exp $";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/ns.c,v 1.18 2003/11/19 14:38:04 sdo Exp $";
 
 
 /* 
@@ -67,7 +69,6 @@ static char const rcsid[] =
  */
 
 
-#include "tcptrace.h"
 
 #ifdef GROK_NS
 
@@ -109,18 +110,24 @@ pread_ns(
 	char tt;
 	double timestamp;
 	int junk;
-	char type[100];
-	char flags[100];
+	char type[16];
+	char flags[16];
 	int iteration;
 	int seq;
 	int is_ack;
 	int is_tcp;
 	int rlen;
+	char myline[128];
+	char *isend;
 
 	++linenum;
 
+	isend = fgets(myline, 128, SYS_STDIN);
+	if (isend == NULL) {  // end of file
+		return(0);
+	}
 	/* correct NS output line would have 14 fields: */
-	rlen = fscanf(SYS_STDIN, "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu\n",
+	rlen = sscanf(myline, "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu",
 		      &tt,
 		      &timestamp,
 		      &junk,
@@ -136,17 +143,15 @@ pread_ns(
 		      &seq,
 		      &ipb->ip_id);
 
-    /* if we reach the End Of File we stop */
-	if (rlen == EOF) {
-	    return(0);
-	}
 	/* if we can't match all 14 fields, we give up on the file */
 	if (rlen != 14 && rlen != 18) {
 	    fprintf(stderr,"Bad NS packet header in line %u only [%d] arguments can be matched expected 14 or 18 \n", linenum, rlen);
 	    return(0);
 	}
 
-	tcpb->th_sport = tcpb->th_dport = iteration;
+        // find out who put in this line of code, because I'd love
+        // to know what their reasoning was
+	//tcpb->th_sport = tcpb->th_dport = iteration;
 
 	is_tcp = strcmp(type, "tcp") == 0;
 	is_ack = strcmp(type, "ack") == 0;
@@ -245,7 +250,6 @@ pread_ns(
   printf("timestamp %g, type %s, plen %d, seq %d, id %d\n",
   timestamp, type, *plen, seq, ipb->ip_id);
 */
-
 	return(1);
     }
 }
@@ -266,8 +270,9 @@ int pread_ns_fulltcp(
 	char tt;
 	double timestamp;
 	int junk;
-	char type[100];
-	char flags[100];
+        unsigned short junkshort;
+	char type[16];
+	char flags[16];
 	int iteration;
 	int seqno;
 	int ackno;
@@ -276,12 +281,18 @@ int pread_ns_fulltcp(
 	int is_tcp;
 	int pflags;
 	int rlen;
+	char myline[128];
+	char *isend;
 
 	++linenum;
 
+	isend = fgets(myline, 128, SYS_STDIN);
+	if (isend == NULL) {  // end of file
+		return 0;
+	}
 	/* correct NS output line would have 14 fields if show_tcphdr_ is 0: */
 	/* For Full TCP this changes to 18 fields when show_tcp is 1*/
-	rlen = fscanf(stdin, "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu %d 0x%x %u %hu\n",
+	rlen = sscanf(myline, "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu %d 0x%x %u %hu",
 		      &tt,
 		      &timestamp,
 		      &junk,
@@ -299,20 +310,17 @@ int pread_ns_fulltcp(
 			  &ackno,
 			  &pflags,
 			  &hdrlen,
-			  (unsigned short *)&junk);
+			  &junkshort);
 
-	/* if we reach the End of File we stop */
-	if (rlen == EOF) {
-	    return(0);
-	}
 	/* if we can't match all 18 fields, we give up on the file */
 	if (rlen != 18) {
+		fprintf(stderr, "\"%s\"\n", myline);
 	    fprintf(stderr,"Bad NS packet header in line %u only [%d] arguments can be matched expected 14 or 18 \n", linenum, rlen);
 	    fprintf(stderr,"Is this a Full Tcp Header?\n");
 	    return(0);
 	}
 
-	tcpb->th_sport = tcpb->th_dport = iteration;
+	//tcpb->th_sport = tcpb->th_dport = iteration;
 	is_tcp = strcmp(type, "tcp") == 0;
 	is_ack = strcmp(type, "ack") == 0;
 	
@@ -322,7 +330,7 @@ int pread_ns_fulltcp(
 	
 	/* we have biger header than 40 Bytes (SACK?) */
 	if (hdrlen > sizeof(struct ip) + sizeof(struct tcphdr)){ 
-		*plen = *plen - (hdrlen - (sizeof(struct ip) - sizeof(struct tcphdr)));
+		*plen -= (hdrlen - (sizeof(struct ip) + sizeof(struct tcphdr)));
 	}
 
 	ipb->ip_len = htons(*plen);
@@ -378,12 +386,13 @@ int pread_ns_fulltcp(
 	*pphystype = PHYS_ETHER;
 
 
-/*  printf("timestamp %g, type %s, plen %d, seq %d, id %d, ack %d, 0x%x %d \n",
-  timestamp, type, *plen, seqno, ipb->ip_id,ackno,pflags,hdrlen);*/
+  /* printf("timestamp %g, type %s, plen %d, seq %d, id %d, ack %d, 0x%x %d \n",
+  timestamp, type, *plen, seqno, ipb->ip_id,ackno,pflags,hdrlen); */
 
 
 	return(1);
     }
+
 return(0);
 }
 
@@ -398,8 +407,10 @@ pread_f *is_ns(char *filename)
     int junk;
     double junkd;
     char junks[20];
+    unsigned short junkshort;
     int hdrlen = 0;
     int pflags = 0;
+    char myline[128];  // read into this line and then parse for values
 
 #ifdef __WIN32
     if((fp = fopen(filename, "r")) == NULL) {
@@ -408,10 +419,19 @@ pread_f *is_ns(char *filename)
     }
 #endif /* __WIN32 */   
 
-    rlen = fscanf(stdin, "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu %d 0x%x %u %hu\n", &tt, &junkd, &junk, &junk, (char *)&junks, &junk, (char *)&junks, &junk, &junk, (short *)&junk, &junk, (short *)&junk, &junk, (short *)&junk, &junk, &pflags, &hdrlen, (short *)&junk);
+    fgets(myline, 128, SYS_STDIN);
+    rlen = sscanf(myline, 
+		  "%c %lg %d %d %s %d %s %d %d.%hu %d.%hu %d %hu %d 0x%x %u %hu", 
+		  &tt, &junkd, &junk, &junk, (char *)&junks, &junk, 
+		  (char *)&junks, &junk, &junk, &junkshort, &junk, 
+		  &junkshort, &junk, &junkshort, &junk, &pflags, &hdrlen, 
+		  &junkshort);
 
-    if ((rlen = getc(stdin)) == EOF) {
+    if ((rlen = getc(SYS_STDIN)) == EOF) {
 	return(NULL);
+    } else {
+	    if (ungetc(rlen, SYS_STDIN) == EOF)
+		    return NULL;
     }
 
     switch (tt) {
@@ -440,6 +460,7 @@ pread_f *is_ns(char *filename)
 	/* Lets check if it is FullTCP or not*/
 	if (hdrlen || pflags){ /*it is FullTCP */
 /*		printf("Full TCP \n"); */
+		rewind(SYS_STDIN);
 		return(pread_ns_fulltcp);
 	}
 	else{ /*Regular TCP (with or without tcpheaders activated */

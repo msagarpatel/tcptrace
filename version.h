@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,15 +52,15 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_version[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/version.h,v 5.50 2003/05/03 20:50:44 jkhasgiw Exp $";
+static char const GCC_UNUSED rcsid_version[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/version.h,v 5.73 2004/11/04 21:45:05 sdo Exp $";
 
 
 /* source code version information */
 #define VERSION_MAJOR	"6"
-#define VERSION_MINOR	"4"
-#define VERSION_BUGFIX	"2"
-#define VERSION_DATE	"Sat May 3, 2003"
+#define VERSION_MINOR	"6"
+#define VERSION_BUGFIX	"7"
+#define VERSION_DATE	"Thu Nov  4, 2004"
 
 #define VERSION_NUM   VERSION_MAJOR "." VERSION_MINOR "." VERSION_BUGFIX
 

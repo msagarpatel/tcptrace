@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -50,13 +51,13 @@
  * 		Athens, OH
  *		http://www.tcptrace.org/
  */
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/mod_realtime.c,v 5.6 2001/05/31 21:26:42 sdo Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/mod_realtime.c,v 5.7 2003/11/19 14:38:03 sdo Exp $";
 
 #ifdef LOAD_MODULE_REALTIME
 
 #include <sys/types.h>
-#include "tcptrace.h"
 #include "mod_realtime.h"
 
 /* info kept for all traced packets */

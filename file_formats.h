@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,8 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_file_formats[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/file_formats.h,v 5.7 2002/06/21 09:56:26 alakhian Exp $";
+static char const GCC_UNUSED rcsid_file_formats[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/file_formats.h,v 5.10 2004/09/27 04:03:19 jblanton Exp $";
 
 
 /* 
@@ -92,9 +93,6 @@ struct supported_formats {
 
 /* install the is_GLORP() routines supported */
 struct supported_formats file_formats[] = {
-#ifdef GROK_TCPDUMP
-	{is_tcpdump,	"tcpdump","tcpdump -- Public domain program from LBL"},
-#endif /* GROK_TCPDUMP */
 #ifdef GROK_SNOOP
 	{is_snoop,	"snoop","Sun Snoop -- Distributed with Solaris"},
 #endif /* GROK_SNOOP */
@@ -113,6 +111,12 @@ struct supported_formats file_formats[] = {
 #ifdef GROK_NETSCOUT
 	{is_netscout,	"netscout","NetScout Manager format"},
 #endif /* GROK_NETSCOUT */
+#ifdef GROK_ERF
+	{is_erf,	"erf","Endace Extensible Record Format"},
+#endif /* GROK_ERF */
+#ifdef GROK_TCPDUMP
+	{is_tcpdump,	"tcpdump","tcpdump -- Public domain program from LBL"},
+#endif /* GROK_TCPDUMP */
 };
 
 #define NUM_FILE_FORMATS (sizeof(file_formats) / sizeof(struct supported_formats))

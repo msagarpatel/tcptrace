@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -50,12 +51,10 @@
  * 		Athens, OH
  *		http://www.tcptrace.org/
  */
-static char const rcsid_pool[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/pool.h,v 5.3 2001/05/31 21:26:43 sdo Exp $";
-
-
 #ifndef _POOL_H
 #define _POOL_H
+static char const GCC_UNUSED rcsid_pool[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/pool.h,v 5.4 2003/11/19 14:38:08 sdo Exp $";
 
 extern int debug;
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,8 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_filter_vars[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/filter_vars.h,v 5.10 2001/08/10 18:03:48 alakhian Exp $";
+static char const GCC_UNUSED rcsid_filter_vars[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/filter_vars.h,v 5.11 2003/11/19 14:38:07 sdo Exp $";
 
 
 /* just a big table of things that we can filter on */

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
- *	Ohio University.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *
  * ---
  * 
@@ -51,17 +51,17 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/print.c,v 5.25 2002/11/11 23:35:40 alakhian Exp $";
+#include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/print.c,v 5.27 2003/11/19 14:38:05 sdo Exp $";
 
 
 /* 
  * print.c -- packet printing routines
  */
 
-#include "tcptrace.h"
 
 
 /* local routines */
@@ -776,11 +776,11 @@ PrintSeqRep(
     
     if (ptcb && print_seq_zero && (ptcb->syn_count>0)) {
 	/* Relative form */
-	sprintf(buf,hex?"0x%08x(R)":"%u(R)",
+	sprintf(buf,hex?"0x%08lx(R)":"%lu(R)",
 		seq - ptcb->syn);
     } else {
 	/* Absolute form */
-	sprintf(buf,hex?"0x%08x":"%u",seq);
+	sprintf(buf,hex?"0x%08lx":"%lu",seq);
     }
     return(buf);
 }

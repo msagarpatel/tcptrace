@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,8 +52,8 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const rcsid_compress[] =
-    "$Header: /usr/local/cvs/tcptrace/compress.h,v 5.4 2001/07/19 20:14:34 weddy Exp $";
+static char const GCC_UNUSED rcsid_compress[] =
+    "$Header: /usr/local/cvs/tcptrace/compress.h,v 5.5 2003/11/19 14:38:06 sdo Exp $";
 
 #define COMP_HDR_SIZE (8*1024)	/* number of bytes from a compressed file that */
 				/* we save into a real file for header check, */

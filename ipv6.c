@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -50,13 +51,13 @@
  * 		Athens, OH
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.c,v 5.20 2003/04/26 23:14:44 mramadas Exp $";
-
-
 #include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.c,v 5.26 2004/11/04 21:55:37 sdo Exp $";
+
+
 
 /* the names of IPv6 extensions that we understand */
 char *
@@ -355,14 +356,28 @@ int gethdrlength (struct ip *pip, void *plast)
 		pheader += 8;
 		length += 8;
 	    }
-	    if ((nextheader == IPPROTO_HOPOPTS) || (nextheader == IPPROTO_ROUTING)
-		|| (nextheader == IPPROTO_DSTOPTS))
+	    if ((nextheader == IPPROTO_HOPOPTS) || 
+		(nextheader == IPPROTO_ROUTING) ||
+		(nextheader == IPPROTO_DSTOPTS))
 	    {
-		nextheader = *pheader;
-		pheader += *(pheader + 1);
-		length += *(pheader + 1);
+	      // Thanks to patch sent by Thomas Bohnert
+	      // Header length field in these IPv6 extension headers
+	      // stores the length of the header in units of 8 bytes, 
+	      // *without* counting the mandatory 8 bytes
+	      
+	      nextheader = *pheader;
+	      length += (*(pheader+1) + 1) * 8;
+	      pheader += (*(pheader+1) + 1) * 8;
 	    }
-	    if (pheader > (char *)plast)
+	    // IPv6 encapsulated in IPv6
+	    if (nextheader == IPPROTO_IPV6)
+	    {
+	      pheader += 40;
+	      nextheader=*(pheader+6);
+	      length += 40;
+	    }
+
+	  if (pheader > (char *)plast)
 		return -1;
 	}
     }
@@ -388,17 +403,20 @@ int getpayloadlength (struct ip *pip, void *plast)
 
 
 
+#ifdef OLD_THESE_MOVED_TO_TRACE_C
 /* 
  * ipcopyaddr: copy an IPv4 or IPv6 address  
+ * (note - this is obsolete in favor of the inline-able
+ *  IP_COPYADDR in tcptrace.h)
  */
-void IP_COPYADDR (ipaddr *toaddr, ipaddr fromaddr)
+void ip_copyaddr (ipaddr *ptoaddr, ipaddr *pfromaddr)
 {
-    if (ADDR_ISV6(&fromaddr)) {
-	memcpy(toaddr->un.ip6.s6_addr, fromaddr.un.ip6.s6_addr, 16);
-	toaddr->addr_vers = 6;
+    if (ADDR_ISV6(pfromaddr)) {
+	memcpy(ptoaddr->un.ip6.s6_addr, pfromaddr->un.ip6.s6_addr, 16);
+	ptoaddr->addr_vers = 6;
     } else {
-	toaddr->un.ip4.s_addr = fromaddr.un.ip4.s_addr;
-	toaddr->addr_vers = 4;
+	ptoaddr->un.ip4.s_addr = pfromaddr->un.ip4.s_addr;
+	ptoaddr->addr_vers = 4;
     }
 }
 
@@ -406,26 +424,53 @@ void IP_COPYADDR (ipaddr *toaddr, ipaddr fromaddr)
 
 /*
  * ipsameaddr: test for equality of two IPv4 or IPv6 addresses
+ * (note - this is obsolete in favor of the inline-able
+ *  IP_SAMEADDR in tcptrace.h)
  */
-int IP_SAMEADDR (ipaddr addr1, ipaddr addr2)
+int ip_sameaddr (ipaddr *paddr1, ipaddr *paddr2)
 {
     int ret = 0;
-    if (ADDR_ISV6(&addr1)) {
-	if (ADDR_ISV6(&addr2))
-	    ret = (memcmp(addr1.un.ip6.s6_addr,
-			  addr2.un.ip6.s6_addr,16) == 0);
+    if (ADDR_ISV6(paddr1)) {
+	if (ADDR_ISV6(paddr2))
+	    ret = (memcmp(paddr1->un.ip6.s6_addr,
+			  paddr2->un.ip6.s6_addr,16) == 0);
     } else {
-	if (ADDR_ISV4(&addr2))
-	    ret = (addr1.un.ip4.s_addr == addr2.un.ip4.s_addr);
+	if (ADDR_ISV4(paddr2))
+	    ret = (paddr1->un.ip4.s_addr == paddr2->un.ip4.s_addr);
     }
     if (debug > 3)
 	printf("SameAddr(%s(%d),%s(%d)) returns %d\n",
-	       HostName(addr1), ADDR_VERSION(&addr1),
-	       HostName(addr2), ADDR_VERSION(&addr2),
+	       HostName(*paddr1), ADDR_VERSION(paddr1),
+	       HostName(*paddr2), ADDR_VERSION(paddr2),
 	       ret);
     return ret;
 }
 
+/*  
+ *  iplowaddr: test if one IPv4 or IPv6 address is lower than the second one
+ * (note - this is obsolete in favor of the inline-able
+ *  IP_LOWADDR in tcptrace.h)
+ */
+int ip_lowaddr (ipaddr *paddr1, ipaddr *paddr2)
+{
+    int ret = 0;
+    if (ADDR_ISV6(paddr1)) {
+	if (ADDR_ISV6(paddr2))
+	    ret = (memcmp(paddr1->un.ip6.s6_addr,
+			  paddr2->un.ip6.s6_addr,16) < 0);
+    } else {
+	/* already know ADDR_ISV4(paddr1) */
+	if (ADDR_ISV4(paddr2))
+	    ret = (paddr1->un.ip4.s_addr < paddr2->un.ip4.s_addr);
+    }
+    if (debug > 3)
+	printf("LowAddr(%s(%d),%s(%d)) returns %d\n",
+	       HostName(*paddr1), ADDR_VERSION(paddr1),
+	       HostName(*paddr2), ADDR_VERSION(paddr2),
+	       ret);
+    return ret;
+}
+#endif /* OLD_THESE_MOVED_TO_TRACE_C */
 
 
 #ifndef HAVE_INET_PTON

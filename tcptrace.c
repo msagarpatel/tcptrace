@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,12 +52,12 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.c,v 5.52 2003/05/03 20:45:52 jkhasgiw Exp $";
-
 #include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.c,v 5.59 2004/10/01 21:42:34 mramadas Exp $";
+
 #include "file_formats.h"
 #include "modules.h"
 #include "version.h"
@@ -130,6 +131,7 @@ Bool graph_zero_len_pkts = TRUE;
 Bool plot_tput_instant = TRUE;
 Bool filter_output = FALSE;
 Bool show_title = TRUE;
+Bool show_rwinline = TRUE;
 Bool do_udp = FALSE;
 Bool resolve_ipaddresses = TRUE;
 Bool resolve_ports = TRUE;
@@ -220,6 +222,8 @@ static struct ext_bool_op {
      "show zero window probe packets on time sequence graphs"},
     {"showtitle", &show_title,  TRUE,
      "show title on the graphs"},
+    {"showrwinline", &show_rwinline,  TRUE,
+     "show yellow receive-window line in owin graphs"},
     {"res_addr", &resolve_ipaddresses,  TRUE,
      "resolve IP addresses into names (may be slow)"},
     {"res_port", &resolve_ports,  TRUE,
@@ -296,8 +300,8 @@ static struct ext_var_op {
      "maximum number of connections to keep at a time in real-time mode"},
     {"remove_live_conn_interval", &live_conn_interval_st, VerifyLiveConnInt,
      "idle time after which an open connection is removed in real-time mode"},
-    {"nonreal_live_conn_interval", &nonreal_conn_interval_st, VerifyNonrealLiveConnInt,
-     "idle time after which an open connection is removed in nonreal-time mode"},
+    {"endpoint_reuse_interval", &nonreal_conn_interval_st, VerifyNonrealLiveConnInt,
+     "time interval of inactivity after which an open connection is considered closed"},
      {"remove_closed_conn_interval", &closed_conn_interval_st, VerifyClosedConnInt,
      "time interval after which a closed connection is removed in real-time mode"},
     {"xplot_args", &xplot_args, NULL,
@@ -669,6 +673,12 @@ Formats(void)
 	fprintf(stderr,"\t%-15s  %s\n",
 		file_formats[i].format_name,
 		file_formats[i].format_descr);
+   fprintf(stderr, 
+	   "Try the tethereal program from the ethereal project to see if\n"
+	   "it can understand this capture format. If so, you may use \n"
+	   "tethereal to convert it to a tcpdump format file as in :\n"
+	   "\t tethereal -r inputfile -w outputfile\n"
+	   "and feed the outputfile to tcptrace\n");
 }
 
 
@@ -1212,6 +1222,7 @@ QuitSig(
     FinishModules();
     plotter_done();
     trace_done();
+    udptrace_done();
     exit(1);
 }
 
@@ -1748,7 +1759,7 @@ ParseExtendedOpt(
 {
      int i;
      struct ext_opt *popt_found = NULL;
-     char *argtext,*opt;
+     char *argtext,*opt=NULL;
      int arglen;
      
      /* there must be at least SOME text there */

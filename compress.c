@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+ *               2002, 2003, 2004
  *	Ohio University.
  *
  * ---
@@ -51,13 +52,13 @@
  *		ostermann@cs.ohiou.edu
  *		http://www.tcptrace.org/
  */
-static char const copyright[] =
-    "@(#)Copyright (c) 2001 -- Ohio University.\n";
-static char const rcsid[] =
-    "$Header: /usr/local/cvs/tcptrace/compress.c,v 5.7 2003/03/05 15:23:10 mramadas Exp $";
-
-
 #include "tcptrace.h"
+static char const GCC_UNUSED copyright[] =
+    "@(#)Copyright (c) 2004 -- Ohio University.\n";
+static char const GCC_UNUSED rcsid[] =
+    "$Header: /usr/local/cvs/tcptrace/compress.c,v 5.9 2004/10/01 21:42:34 mramadas Exp $";
+
+
 #include "compress.h"
 #include <sys/wait.h>
 
@@ -625,7 +626,7 @@ PipeFitting(
     FILE *f_header,
     FILE *f_orig_stdin)
 {
-    char buf[4096];		/* just a big buffer */
+    char buf[COMP_HDR_SIZE];		/* just a big buffer */
     int len;
 
     // Fix the file synchronization problems and undefined behavior exhibited
