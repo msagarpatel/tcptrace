@@ -18,16 +18,11 @@ AC_CHECK_SIZEOF(unsigned long long int)
 
 
 dnl include additional checking if developing
-AC_MSG_CHECKING(for development environment)
 AC_LBL_DEVEL(V_CCOPT)
 
 
 dnl check for needed network libraries
 AC_LBL_LIBRARY_NET()
-
-
-dnl Checks for sometime-missing ether_ntoa function
-AC_CHECK_FUNCS(ether_ntoa)
 
 dnl use fpurge if available, otherwise fflush
 AC_CHECK_FUNCS(fpurge)
@@ -35,14 +30,17 @@ AC_CHECK_FUNCS(fpurge)
 dnl use mkstemp if available, otherwise tempnam
 AC_CHECK_FUNCS(mkstemp)
 
-dnl check for the IPv6 routine inet_ntop
-AC_CHECK_FUNCS(inet_ntop)
+dnl use valloc if available, then memalign, then malloc
+AC_CHECK_FUNCS(valloc memalign)
+
+dnl check for the IPv6 routines inet_pton
+AC_CHECK_FUNCS(inet_pton)
 
 
 
-dnl Grab standard includes under weird versions
+dnl Grab standard includes under weird Linux versions
 case "$target_os" in
-  linux*)	V_INCLS="$V_INCLS -Ilinux-include";;
+  *inux*)	V_INCLS="$V_INCLS -Ilinux-include";;
 esac
 
 

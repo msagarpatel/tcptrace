@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/names.c,v 3.6 1998/03/05 01:17:14 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/names.c,v 5.6 1999/09/07 21:35:13 sdo Exp $";
 
 
 /* 
@@ -55,7 +55,7 @@ ServiceName(
     static char port_buf[20];
     char *sb_port;
 
-    if (nonames) {
+    if (!resolve_ports) {
 	sprintf(port_buf,"%hu",port);
 	return(port_buf);
     }
@@ -104,6 +104,28 @@ ServiceName(
 }
 
 
+/* turn an ipaddr into a printable format */
+/* N.B. - result comes from static memory, save it before calling back! */
+char *
+HostAddr(
+    ipaddr ipaddress)
+{
+    char *adr;
+
+    if (ADDR_ISV6(&ipaddress)) {
+	static char adrv6[INET6_ADDRSTRLEN];
+	my_inet_ntop(AF_INET6,(char *) ipaddress.un.ip6.s6_addr,
+		     adrv6, INET6_ADDRSTRLEN);
+	adr = adrv6;
+    } else {
+	adr = inet_ntoa(ipaddress.un.ip4);
+    }
+        
+    return(adr);
+}
+
+
+
 char *
 HostName(
     ipaddr ipaddress)
@@ -115,16 +137,9 @@ HostName(
     static char name_buf[100];
     char *adr;
 
-    if (ADDR_ISV6(&ipaddress)) {
-	static char adrv6[INET6_ADDRSTRLEN];
-	inet_ntop(AF_INET6,(char *) ipaddress.un.ip6.s6_addr,
-		  adrv6, INET6_ADDRSTRLEN);
-	adr = adrv6;
-    } else {
-	adr = inet_ntoa(ipaddress.un.ip4);
-    }
-        
-    if (nonames) {
+    adr = HostAddr(ipaddress);
+
+    if (!resolve_ipaddresses) {
 	return(adr);
     }
 	

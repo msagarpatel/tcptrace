@@ -24,21 +24,24 @@
 #define	NOT	267
 #define	AND	268
 #define	OR	269
-#define	PLUS	270
-#define	MINUS	271
-#define	TIMES	272
-#define	DIVIDE	273
-#define	MOD	274
-#define	VARIABLE	275
-#define	STRING	276
-#define	SIGNED	277
-#define	UNSIGNED	278
-#define	BOOL	279
+#define	BAND	270
+#define	BOR	271
+#define	PLUS	272
+#define	MINUS	273
+#define	TIMES	274
+#define	DIVIDE	275
+#define	MOD	276
+#define	VARIABLE	277
+#define	STRING	278
+#define	SIGNED	279
+#define	UNSIGNED	280
+#define	BOOL	281
+#define	IPADDR	282
 
 #line 1 "filt_parser.y"
 
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -81,6 +84,7 @@ typedef union	{ /* the types that we use in the tokens */
     char *string;
     long signed_long;
     u_long unsigned_long;
+    ipaddr *pipaddr;
     Bool bool;
     enum optype op;
     struct filter_node *pf;
@@ -95,11 +99,11 @@ typedef union	{ /* the types that we use in the tokens */
 
 
 
-#define	YYFINAL		39
+#define	YYFINAL		44
 #define	YYFLAG		-32768
-#define	YYNTBASE	25
+#define	YYNTBASE	28
 
-#define YYTRANSLATE(x) ((unsigned)(x) <= 279 ? yytranslate[x] : 30)
+#define YYTRANSLATE(x) ((unsigned)(x) <= 282 ? yytranslate[x] : 33)
 
 static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -129,23 +133,25 @@ static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
      2,     2,     2,     2,     2,     1,     2,     3,     4,     5,
      6,     7,     8,     9,    10,    11,    12,    13,    14,    15,
-    16,    17,    18,    19,    20,    21,    22,    23,    24
+    16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
+    26,    27
 };
 
 #if YYDEBUG != 0
 static const short yyprhs[] = {     0,
      0,     3,     7,    11,    14,    18,    20,    24,    28,    32,
-    36,    40,    44,    46,    48,    50,    52,    54,    56,    58,
-    60,    62,    64,    66
+    36,    40,    44,    48,    52,    54,    56,    58,    60,    62,
+    64,    66,    68,    70,    72,    74,    76
 };
 
-static const short yyrhs[] = {    26,
-     3,     0,    26,    13,    26,     0,    26,    14,    26,     0,
-    12,    26,     0,    27,    29,    27,     0,    27,     0,    27,
-    15,    27,     0,    27,    16,    27,     0,    27,    17,    27,
-     0,    27,    18,    27,     0,    27,    19,    27,     0,     4,
-    26,     5,     0,    28,     0,    20,     0,    22,     0,    23,
-     0,    21,     0,    24,     0,     6,     0,     7,     0,     8,
+static const short yyrhs[] = {    29,
+     3,     0,    29,    13,    29,     0,    29,    14,    29,     0,
+    12,    29,     0,    30,    32,    30,     0,    30,     0,    30,
+    17,    30,     0,    30,    18,    30,     0,    30,    19,    30,
+     0,    30,    20,    30,     0,    30,    21,    30,     0,    30,
+    15,    30,     0,    30,    16,    30,     0,     4,    29,     5,
+     0,    31,     0,    22,     0,    24,     0,    25,     0,    23,
+     0,    26,     0,    27,     0,     6,     0,     7,     0,     8,
      0,     9,     0,    10,     0,    11,     0
 };
 
@@ -153,9 +159,9 @@ static const short yyrhs[] = {    26,
 
 #if YYDEBUG != 0
 static const short yyrline[] = { 0,
-    79,    84,    86,    88,    90,    92,    98,   100,   102,   104,
-   106,   108,   110,   115,   117,   119,   121,   123,   128,   130,
-   132,   134,   136,   138
+    84,    89,    91,    93,    95,    97,   103,   105,   107,   109,
+   111,   113,   115,   117,   119,   124,   126,   128,   130,   132,
+   134,   140,   142,   144,   146,   148,   150
 };
 #endif
 
@@ -164,65 +170,69 @@ static const short yyrline[] = { 0,
 
 static const char * const yytname[] = {   "$","error","$undefined.","EOS","LPAREN",
 "RPAREN","GREATER","GREATER_EQ","LESS","LESS_EQ","EQUAL","NEQUAL","NOT","AND",
-"OR","PLUS","MINUS","TIMES","DIVIDE","MOD","VARIABLE","STRING","SIGNED","UNSIGNED",
-"BOOL","line","expr","number","leaf","relop", NULL
+"OR","BAND","BOR","PLUS","MINUS","TIMES","DIVIDE","MOD","VARIABLE","STRING",
+"SIGNED","UNSIGNED","BOOL","IPADDR","line","expr","number","leaf","relop", NULL
 };
 #endif
 
 static const short yyr1[] = {     0,
-    25,    26,    26,    26,    26,    26,    27,    27,    27,    27,
-    27,    27,    27,    28,    28,    28,    28,    28,    29,    29,
-    29,    29,    29,    29
+    28,    29,    29,    29,    29,    29,    30,    30,    30,    30,
+    30,    30,    30,    30,    30,    31,    31,    31,    31,    31,
+    31,    32,    32,    32,    32,    32,    32
 };
 
 static const short yyr2[] = {     0,
      2,     3,     3,     2,     3,     1,     3,     3,     3,     3,
-     3,     3,     1,     1,     1,     1,     1,     1,     1,     1,
-     1,     1,     1,     1
+     3,     3,     3,     3,     1,     1,     1,     1,     1,     1,
+     1,     1,     1,     1,     1,     1,     1
 };
 
 static const short yydefact[] = {     0,
-     0,     0,    14,    17,    15,    16,    18,     0,     6,    13,
-     0,     4,     1,     0,     0,    19,    20,    21,    22,    23,
-    24,     0,     0,     0,     0,     0,     0,    12,     2,     3,
-     7,     8,     9,    10,    11,     5,     0,     0,     0
+     0,     0,    16,    19,    17,    18,    20,    21,     0,     6,
+    15,     0,     4,     1,     0,     0,    22,    23,    24,    25,
+    26,    27,     0,     0,     0,     0,     0,     0,     0,     0,
+    14,     2,     3,    12,    13,     7,     8,     9,    10,    11,
+     5,     0,     0,     0
 };
 
-static const short yydefgoto[] = {    37,
-     8,     9,    10,    27
+static const short yydefgoto[] = {    42,
+     9,    10,    11,    30
 };
 
 static const short yypact[] = {    -4,
-    -4,    -4,-32768,-32768,-32768,-32768,-32768,    29,    20,-32768,
-    -2,    -7,-32768,    -4,    -4,-32768,-32768,-32768,-32768,-32768,
--32768,     1,     1,     1,     1,     1,     1,-32768,   -10,-32768,
-    38,    38,-32768,-32768,-32768,    35,     9,    10,-32768
+    -4,    -4,-32768,-32768,-32768,-32768,-32768,-32768,    33,    24,
+-32768,    -2,    -9,-32768,    -4,    -4,-32768,-32768,-32768,-32768,
+-32768,-32768,     2,     2,     2,     2,     2,     2,     2,     2,
+-32768,    -7,-32768,    46,    46,    49,    49,-32768,-32768,-32768,
+    41,     9,    10,-32768
 };
 
 static const short yypgoto[] = {-32768,
-     0,    22,-32768,-32768
+     0,    25,-32768,-32768
 };
 
 
-#define	YYLAST		57
+#define	YYLAST		70
 
 
 static const short yytable[] = {     1,
-    11,    12,    28,    15,     1,    14,    15,     2,    38,    39,
-    14,    15,     0,    29,    30,     3,     4,     5,     6,     7,
-     3,     4,     5,     6,     7,    16,    17,    18,    19,    20,
-    21,    13,     0,     0,    22,    23,    24,    25,    26,     0,
-     0,    14,    15,    31,    32,    33,    34,    35,    36,    22,
-    23,    24,    25,    26,    24,    25,    26
+    12,    13,    31,    15,    16,     1,    16,     2,    43,    44,
+    15,    16,     0,     0,    32,    33,     0,     3,     4,     5,
+     6,     7,     8,     3,     4,     5,     6,     7,     8,    17,
+    18,    19,    20,    21,    22,    14,     0,     0,    23,    24,
+    25,    26,    27,    28,    29,    15,    16,    34,    35,    36,
+    37,    38,    39,    40,    41,    23,    24,    25,    26,    27,
+    28,    29,    25,    26,    27,    28,    29,    27,    28,    29
 };
 
 static const short yycheck[] = {     4,
-     1,     2,     5,    14,     4,    13,    14,    12,     0,     0,
-    13,    14,    -1,    14,    15,    20,    21,    22,    23,    24,
-    20,    21,    22,    23,    24,     6,     7,     8,     9,    10,
-    11,     3,    -1,    -1,    15,    16,    17,    18,    19,    -1,
-    -1,    13,    14,    22,    23,    24,    25,    26,    27,    15,
-    16,    17,    18,    19,    17,    18,    19
+     1,     2,     5,    13,    14,     4,    14,    12,     0,     0,
+    13,    14,    -1,    -1,    15,    16,    -1,    22,    23,    24,
+    25,    26,    27,    22,    23,    24,    25,    26,    27,     6,
+     7,     8,     9,    10,    11,     3,    -1,    -1,    15,    16,
+    17,    18,    19,    20,    21,    13,    14,    23,    24,    25,
+    26,    27,    28,    29,    30,    15,    16,    17,    18,    19,
+    20,    21,    17,    18,    19,    20,    21,    19,    20,    21
 };
 /* -*-C-*-  Note some compilers choke on comments on `#line' lines.  */
 #line 3 "/usr/local/gnu/share/bison.simple"
@@ -723,99 +733,111 @@ yyreduce:
   switch (yyn) {
 
 case 1:
-#line 80 "filt_parser.y"
+#line 85 "filt_parser.y"
 {InstallFilter(yyvsp[-1].pf);;
     break;}
 case 2:
-#line 85 "filt_parser.y"
+#line 90 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_AND,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 3:
-#line 87 "filt_parser.y"
+#line 92 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_OR,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 4:
-#line 89 "filt_parser.y"
+#line 94 "filt_parser.y"
 { yyval.pf = MakeUnaryNode(OP_NOT,yyvsp[0].pf); ;
     break;}
 case 5:
-#line 91 "filt_parser.y"
+#line 96 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(yyvsp[-1].op,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 6:
-#line 93 "filt_parser.y"
+#line 98 "filt_parser.y"
 { yyval.pf = yyvsp[0].pf; ;
     break;}
 case 7:
-#line 99 "filt_parser.y"
+#line 104 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_PLUS,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 8:
-#line 101 "filt_parser.y"
+#line 106 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_MINUS,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 9:
-#line 103 "filt_parser.y"
+#line 108 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_TIMES,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 10:
-#line 105 "filt_parser.y"
+#line 110 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_DIVIDE,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 11:
-#line 107 "filt_parser.y"
+#line 112 "filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_MOD,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 12:
-#line 109 "filt_parser.y"
-{ yyval.pf = yyvsp[-1].pf; ;
+#line 114 "filt_parser.y"
+{ yyval.pf = MakeBinaryNode(OP_BAND,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 13:
-#line 111 "filt_parser.y"
-{ yyval.pf = yyvsp[0].pf; ;
+#line 116 "filt_parser.y"
+{ yyval.pf = MakeBinaryNode(OP_BOR,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 14:
-#line 116 "filt_parser.y"
-{ yyval.pf = MakeVarNode(yyvsp[0].string); ;
+#line 118 "filt_parser.y"
+{ yyval.pf = yyvsp[-1].pf; ;
     break;}
 case 15:
-#line 118 "filt_parser.y"
-{ yyval.pf = MakeSignedConstNode(yyvsp[0].signed_long); ;
+#line 120 "filt_parser.y"
+{ yyval.pf = yyvsp[0].pf; ;
     break;}
 case 16:
-#line 120 "filt_parser.y"
-{ yyval.pf = MakeUnsignedConstNode(yyvsp[0].unsigned_long); ;
+#line 125 "filt_parser.y"
+{ yyval.pf = MakeVarNode(yyvsp[0].string); ;
     break;}
 case 17:
-#line 122 "filt_parser.y"
-{ yyval.pf = MakeStringConstNode(yyvsp[0].string); ;
+#line 127 "filt_parser.y"
+{ yyval.pf = MakeSignedConstNode(yyvsp[0].signed_long); ;
     break;}
 case 18:
-#line 124 "filt_parser.y"
-{ yyval.pf = MakeBoolConstNode(yyvsp[0].bool); ;
+#line 129 "filt_parser.y"
+{ yyval.pf = MakeUnsignedConstNode(yyvsp[0].unsigned_long); ;
     break;}
 case 19:
-#line 129 "filt_parser.y"
-{ yyval.op = OP_GREATER;;
+#line 131 "filt_parser.y"
+{ yyval.pf = MakeStringConstNode(yyvsp[0].string); ;
     break;}
 case 20:
-#line 131 "filt_parser.y"
-{ yyval.op = OP_GREATER_EQ;;
+#line 133 "filt_parser.y"
+{ yyval.pf = MakeBoolConstNode(yyvsp[0].bool); ;
     break;}
 case 21:
-#line 133 "filt_parser.y"
-{ yyval.op = OP_LESS;;
+#line 136 "filt_parser.y"
+{ yyval.pf = MakeIPaddrConstNode(yyvsp[0].pipaddr); ;
     break;}
 case 22:
-#line 135 "filt_parser.y"
-{ yyval.op = OP_LESS_EQ;;
+#line 141 "filt_parser.y"
+{ yyval.op = OP_GREATER;;
     break;}
 case 23:
-#line 137 "filt_parser.y"
-{ yyval.op = OP_EQUAL;;
+#line 143 "filt_parser.y"
+{ yyval.op = OP_GREATER_EQ;;
     break;}
 case 24:
-#line 139 "filt_parser.y"
+#line 145 "filt_parser.y"
+{ yyval.op = OP_LESS;;
+    break;}
+case 25:
+#line 147 "filt_parser.y"
+{ yyval.op = OP_LESS_EQ;;
+    break;}
+case 26:
+#line 149 "filt_parser.y"
+{ yyval.op = OP_EQUAL;;
+    break;}
+case 27:
+#line 151 "filt_parser.y"
 { yyval.op = OP_NEQUAL;;
     break;}
 }
@@ -1016,7 +1038,7 @@ yyerrhandle:
   yystate = yyn;
   goto yynewstate;
 }
-#line 141 "filt_parser.y"
+#line 153 "filt_parser.y"
 
 
 void

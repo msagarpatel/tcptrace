@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,8 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
-static char const rcsid_http[] =
-   "$Id: mod_http.c,v 1.23 1998/05/13 18:10:16 sdo Exp $";
+static char const rcsid[] =
+   "$Header: /home/sdo/src/tcptrace/src/RCS/mod_http.c,v 5.3 1999/08/20 14:27:29 sdo Exp $";
 
 #ifdef LOAD_MODULE_HTTP
 
@@ -133,8 +133,8 @@ static struct client_info *FindClient(char *clientname);
 
 
 /* useful macros */
-#define IS_CLIENT(ptcp) ((ptcp)->th_dport == httpd_port)
-#define IS_SERVER(ptcp) ((ptcp)->th_dport != httpd_port)
+#define IS_CLIENT(ptcp) (ntohs((ptcp)->th_dport) == httpd_port)
+#define IS_SERVER(ptcp) (ntohs((ptcp)->th_dport) != httpd_port)
 
 
 /* Mostly as a module example, here's a plug in that records HTTP info */
@@ -357,11 +357,11 @@ http_read(
 
     /* find the start of the TCP header */
     ptcp = (struct tcphdr *) ((char *)pip + 4*pip->ip_hl);
-    tcp_length = pip->ip_len - (4 * pip->ip_hl);
+    tcp_length = ntohs(pip->ip_len) - (4 * pip->ip_hl);
     tcp_data_length = tcp_length - (4 * ptcp->th_off);
 
     /* verify port */
-    if ((ptcp->th_sport != httpd_port) && (ptcp->th_dport != httpd_port))
+    if ((ntohs(ptcp->th_sport) != httpd_port) && (ntohs(ptcp->th_dport) != httpd_port))
 	return;
 
     /* find the data */
@@ -370,23 +370,23 @@ http_read(
     /* for client, record both ACKs and DATA time stamps */
     if (ph && IS_CLIENT(ptcp)) {
 	if (tcp_data_length > 0) {
-	    AddGetTS(ph,DataOffset(ph->tcb_client,ptcp->th_seq));
+	    AddGetTS(ph,DataOffset(ph->tcb_client,ntohl(ptcp->th_seq)));
 	}
 	if (ACK_SET(ptcp)) {
 	    if (debug > 4)
 		printf("Client acks %ld\n", DataOffset(ph->tcb_server,ptcp->th_ack));	    
-	    AddAckTS(ph,DataOffset(ph->tcb_server,ptcp->th_ack));
+	    AddAckTS(ph,DataOffset(ph->tcb_server,ntohl(ptcp->th_ack)));
 	}
     }
 
     /* for server, record DATA time stamps */
     if (ph && IS_SERVER(ptcp)) {
 	if (tcp_data_length > 0) {
-	    AddDataTS(ph,DataOffset(ph->tcb_server,ptcp->th_seq));
+	    AddDataTS(ph,DataOffset(ph->tcb_server,ntohl(ptcp->th_seq)));
 	    if (debug > 5) {
 		printf("Server sends %ld thru %ld\n",
-		       DataOffset(ph->tcb_server,ptcp->th_seq),
-		       DataOffset(ph->tcb_server,ptcp->th_seq)+tcp_data_length-1);
+		       DataOffset(ph->tcb_server,ntohl(ptcp->th_seq)),
+		       DataOffset(ph->tcb_server,ntohl(ptcp->th_seq))+tcp_data_length-1);
 	    }
 	}
     }
@@ -856,8 +856,8 @@ connection (FINs) were not found in trace file.\n");
 
     /* see if we got all the bytes */
     missing = pab->trunc_bytes + pba->trunc_bytes;
-    missing += pab->fin-pab->syn-1-(pab->data_bytes-pab->rexmit_bytes);
-    missing += pba->fin-pba->syn-1-(pba->data_bytes-pba->rexmit_bytes);
+    missing += pab->fin-pab->syn-1-(pab->unique_bytes);
+    missing += pba->fin-pba->syn-1-(pba->unique_bytes);
 
     if (missing != 0)
 	printf("WARNING!!!!  Information may be invalid, %ld bytes were not captured\n",

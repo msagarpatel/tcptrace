@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
+static char const rcsid_filter[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/filter.h,v 5.5 1999/02/25 15:01:37 sdo Exp $";
 
 
 /* all of the variable types that we understand */
@@ -41,10 +43,11 @@ enum vartype {
     V_STRING	= 10,
     V_ULLONG	= 11,
     V_LLONG	= 12,
+    V_IPADDR	= 13,
 
     /* functions */
-    V_FUNC	=13,		/* function returning unsigned */
-    V_UFUNC	=14,		/* function returning signed */
+    V_FUNC	=14,		/* function returning unsigned */
+    V_UFUNC	=15,		/* function returning signed */
 };
 
 
@@ -77,6 +80,10 @@ enum optype {
     OP_TIMES	  = 115,
     OP_DIVIDE	  = 116,
     OP_MOD	  = 117,
+
+    /* bitwise arithmetic */
+    OP_BAND	  = 118,
+    OP_BOR	  = 119,
 };
 
 
@@ -86,6 +93,7 @@ union Constant {
     llong	longint;
     Bool	bool;
     char	*string;
+    ipaddr	*pipaddr;
 };
 
 /* Variable - keep the name and offset within a tcp_pair */
@@ -117,6 +125,7 @@ struct filter_node {
 	struct Variable variable;
 	union Constant constant;
     } un;
+    Bool conjunction;
     struct filter_node *next_var; /* for wildcard variable matches */
 };
 
@@ -159,6 +168,7 @@ struct filter_node *MakeStringConstNode(char *val);
 struct filter_node *MakeBoolConstNode(Bool val);
 struct filter_node *MakeSignedConstNode(llong val);
 struct filter_node *MakeUnsignedConstNode(u_llong val);
+struct filter_node *MakeIPaddrConstNode(ipaddr *pipaddr);
 
 /* functions for calculated values */
 u_llong VFuncClntTput(tcp_pair *ptp);

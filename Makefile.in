@@ -30,7 +30,7 @@ DEFINES += -DGUNZIP="\"gunzip\""
 # 
 ################################################################## 
 PCAP_LDLIBS = -lpcap
-PCAP_INCS    = -I/usr/local/include -I. -I../pcap
+PCAP_INCS    = -I/usr/local/include -I. -I../pcap -I/usr/include/pcap
 PCAP_LDFLAGS = -L/usr/local/lib -Llib -Lpcap -L../pcap
 
 
@@ -88,8 +88,23 @@ DEFINES += -DGROK_NETM
 # define GROK_ETHERPEEK if you want tcptrace to understand the output
 # format of the Macintosh program Etherpeek
 DEFINES += -DGROK_ETHERPEEK
+# define GROK_NS if you want tcptrace to understand the output
+# format of the LBL network simulator, ns
+DEFINES += -DGROK_NS
+# define GROK_NLANR if you want tcptrace to understand the output
+# format of the various NLANL tools
+# (this doesn't work well yet, not recommended - Sat Dec 19, 1998)
+# DEFINES += -DGROK_NLANR
 
 
+################################################################## 
+# 
+# Just a quick installation rule, not much to do
+# 
+################################################################## 
+# Pathname of directory to install the binary
+BINDIR = /usr/local/bin
+MANDIR = /usr/local/man/
 
 
 ################################################################## 
@@ -131,13 +146,14 @@ LDFLAGS += ${PCAP_LDFLAGS}
 
 
 # Source Files
-CFILES=compress.c etherpeek.c gcache.c mfiles.c missing.c names.c \
-	netm.c output.c plotter.c print.c rexmit.c snoop.c	\
+CFILES=compress.c etherpeek.c gcache.c mfiles.c names.c \
+	netm.c output.c plotter.c print.c rexmit.c snoop.c nlanr.c \
 	tcpdump.c tcptrace.c thruput.c trace.c ipv6.c	\
 	filt_scanner.c filt_parser.c filter.c udp.c \
-	version.c
+	ns.c version.c
 MODULES=mod_http.c mod_traffic.c mod_rttgraph.c mod_tcplib.c mod_collie.c
-OFILES= ${CFILES:.c=.o} ${MODULES:.c=.o}
+MODSUPPORT=dyncounter.c
+OFILES= ${CFILES:.c=.o} ${MODULES:.c=.o} ${MODSUPPORT:.c=.o}
 
 all: tcptrace versnum
 
@@ -201,48 +217,98 @@ clean:
 noplots:
 	rm -f *.xpl *.dat
 
+initial:
+	cp Makefile.empty Makefile
+
+spotless: clean noplots initial
+
 #
 # for making distribution
 tarfile: versnum
-	@ VERS=`./versnum`; DIR=tcptrace_$${VERS}; \
+	@VERS=`./versnum`; DIR=tcptrace_$${VERS}; \
 	GZTAR=$$HOME/tcptrace.$${VERS}.tar.gz; \
+	make spotless; \
 	cd ..; \
-	test -h $${DIR} || ln -s src $${DIR}; \
+	ln -s src $${DIR} 2>/dev/null ; \
 	/usr/sbin/tar -FFcvhf - $${DIR} | gzip > $${GZTAR}; \
 	echo ; echo "Tarfile is in $${GZTAR}"
 #
 # similar, but include RCS directory and etc
 bigtarfile:
-	cd ..; /usr/sbin/tar -cfv $$HOME/tcptrace.tar tcptrace
+	cd ..; /usr/sbin/tar -cfv $$HOME/tcptrace.tar src
 
+#
+# just a quick installation rule
+INSTALL = ./install-sh -c
+install: tcptrace
+	$(INSTALL) -m 755 -o bin -g bin tcptrace ${BINDIR}/tcptrace
+install-man: 
+	$(INSTALL) -m 444 -o bin -g bin tcptrace.man $(MANDIR)/man1/tcptrace.1
 
 #
 # static file dependencies
 #
-filter.o: filter.h filter_vars.h
-etherpeek.o: tcptrace.h 
-gcache.o: tcptrace.h  gcache.h
-mfiles.o: tcptrace.h 
-mod_http.o: tcptrace.h  mod_http.h
-names.o: tcptrace.h  gcache.h
-netm.o: tcptrace.h 
-output.o: tcptrace.h  gcache.h
-plotter.o: tcptrace.h 
-print.o: tcptrace.h 
-rexmit.o: tcptrace.h 
-rtt.o: tcptrace.h 
-snoop.o: tcptrace.h 
-tcpdump.o: tcptrace.h tcpdump.h 
-tcptrace.o: tcptrace.h  file_formats.h modules.h mod_http.h version.h
-thruput.o: tcptrace.h 
-trace.o: tcptrace.h  gcache.h
-udp.o: tcptrace.h  gcache.h
-compress.o: tcptrace.h  compress.h
-mod_http.o: tcptrace.h 
-mod_traffic.o: tcptrace.h  mod_traffic.h
-mod_tcplib.o: tcptrace.h  mod_tcplib.h
-mod_rttgraph.o: tcptrace.h  mod_rttgraph.h
-ipv6.o: tcptrace.h ipv6.h
+compress.o: tcptrace.h
+compress.o: ipv6.h
+compress.o: compress.h
+dyncounter.o: dyncounter.h
+etherpeek.o: tcptrace.h
+etherpeek.o: ipv6.h
+filt_parser.o: tcptrace.h
+filt_parser.o: ipv6.h
+filt_parser.o: filter.h
+filt_scanner.o: tcptrace.h
+filt_scanner.o: ipv6.h
+filt_scanner.o: filter.h
+filt_scanner.o: filt_parser.h
+filter.o: tcptrace.h
+filter.o: ipv6.h
+filter.o: filter.h
+filter.o: filter_vars.h
+gcache.o: tcptrace.h
+gcache.o: ipv6.h
+gcache.o: gcache.h
+ipv6.o: tcptrace.h
+ipv6.o: ipv6.h
+mfiles.o: tcptrace.h
+mfiles.o: ipv6.h
+names.o: tcptrace.h
+names.o: ipv6.h
+names.o: gcache.h
+netm.o: tcptrace.h
+netm.o: ipv6.h
+nlanr.o: tcptrace.h
+nlanr.o: ipv6.h
+ns.o: tcptrace.h
+ns.o: ipv6.h
+output.o: tcptrace.h
+output.o: ipv6.h
+output.o: gcache.h
+plotter.o: tcptrace.h
+plotter.o: ipv6.h
+print.o: tcptrace.h
+print.o: ipv6.h
+rexmit.o: tcptrace.h
+rexmit.o: ipv6.h
+snoop.o: tcptrace.h
+snoop.o: ipv6.h
+tcpdump.o: tcptrace.h
+tcpdump.o: ipv6.h
+tcptrace.o: tcptrace.h
+tcptrace.o: ipv6.h
+tcptrace.o: file_formats.h
+tcptrace.o: modules.h
+tcptrace.o: version.h
+thruput.o: tcptrace.h
+thruput.o: ipv6.h
+trace.o: tcptrace.h
+trace.o: ipv6.h
+trace.o: gcache.h
+udp.o: tcptrace.h
+udp.o: ipv6.h
+udp.o: gcache.h
+versnum.o: version.h
+
 
 #
 # make development version

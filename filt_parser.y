@@ -1,6 +1,6 @@
 %{
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,6 +45,7 @@
     char *string;
     long signed_long;
     u_long unsigned_long;
+    ipaddr *pipaddr;
     Bool bool;
     enum optype op;
     struct filter_node *pf;
@@ -57,10 +58,13 @@
 %token GREATER GREATER_EQ LESS LESS_EQ EQUAL NEQUAL
 %token NOT
 
-/* AND or OR group left to right, NOT is highest precednece, then OR */
+/* AND or OR group left to right, NOT is highest precedence, then OR */
 %left NOT
 %left AND
 %left OR
+
+/* BITWISE AND and OR */
+%left BAND BOR
 
 /* PLUS and MINUS group left to right, lower prec then TIMES and DIVIDE */
 %left PLUS MINUS
@@ -70,6 +74,7 @@
 %token <signed_long> SIGNED
 %token <unsigned_long> UNSIGNED
 %token <bool> BOOL
+%token <pipaddr> IPADDR
 %type <op> relop
 %type <pf> expr leaf number
 
@@ -105,6 +110,10 @@ number	: number PLUS number
 		{ $$ = MakeBinaryNode(OP_DIVIDE,$1,$3);}
 	| number MOD number
 		{ $$ = MakeBinaryNode(OP_MOD,$1,$3);}
+	| number BAND number
+		{ $$ = MakeBinaryNode(OP_BAND,$1,$3);}
+	| number BOR number
+		{ $$ = MakeBinaryNode(OP_BOR,$1,$3);}
 	| LPAREN expr RPAREN
 		{ $$ = $2; }
 	| leaf
@@ -122,6 +131,9 @@ leaf	: VARIABLE
 		{ $$ = MakeStringConstNode($1); }
 	| BOOL
 		{ $$ = MakeBoolConstNode($1); }
+	| IPADDR
+		/* just pretend, for now */
+		{ $$ = MakeIPaddrConstNode($1); }
 	;
 
 /* relational operators */

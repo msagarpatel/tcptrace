@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,8 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
-static char const rcsid_collie[] =
-   "$Id: mod_collie.c,v 1.4 1998/08/14 20:19:01 sdo Exp $";
+static char const rcsid[] =
+   "$Header: /home/sdo/src/tcptrace/src/RCS/mod_collie.c,v 5.3 1999/02/25 15:01:26 sdo Exp $";
 
 #ifdef LOAD_MODULE_COLLIE
 
@@ -286,11 +286,11 @@ static char *collie_dots(
     ipaddr ipaddress)
 {
     char *pch;
-    int map = nonames;
+    int map = resolve_ipaddresses;
 
-    nonames = 1;
+    resolve_ipaddresses = 0;
     pch = HostName(ipaddress);
-    nonames = map;
+    resolve_ipaddresses = map;
 
     return(pch);
 }
@@ -301,11 +301,11 @@ static char *collie_name(
     ipaddr ipaddress)
 {
     char *pch;
-    int map = nonames;
+    int map = resolve_ipaddresses;
 
-    nonames = 0;
+    resolve_ipaddresses = 1;
     pch = HostName(ipaddress);
-    nonames = map;
+    resolve_ipaddresses = map;
 
     return(pch);
 }

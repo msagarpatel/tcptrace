@@ -254,3 +254,251 @@ you have a lot of traffic on official ports that AREN'T in this file,
 If you can add more entries and make the snoop (and tcptrace)
 information easier to read.
 
+============================================================
+Wed Dec  2, 1998
+
+>> [...referring to the TSG graphs...] interpretation of some of the
+>> graphics, like the "3" and diamonds and arrows and such.
+
+"3" is a triple duplicate ACK, the kind of thing that usually triggers 
+fast retransmit in the sender.
+
+The "diamonds" are probably what you're seeing at the tops of some of
+the data segments.  That means the segment was sent with a PUSH.
+
+>> From the code, there are a bunch of types of ACKS and things. A
+>> bunch of different colors as well.
+
+SACKs are purple, normal ACKs are green.  SYNs and FINs are orange
+(unless they're retransmitted, then they're red)
+
+If there's a blue diamond on an ACK, that means that it doesn't create 
+a usable RTT sample (because something that preceeded that data was
+retransmitted)
+
+If there's a red diamond on an ACK, it ALSO means that there's no RTT
+sample for it, but in this case it's because the data being ACKed was
+retransmitted.
+============================================================
+Mon Dec 14, 1998S
+
+>> Is there any way to always use the same set of flags??
+
+You can store commonly-used tcptrace arguments in "~/.tcptracerc"
+(comments start with '#') or in envariable "TCPTRACEOPTS".
+
+============================================================
+Wed Dec 16, 1998
+
+>> it seems to be running VERY slowly, and using very little CPU time
+
+It might be stuck trying to resolve IP addresses.  Try running it with
+"-n" to NOT resolve.  I almost always use "-n" when looking at
+non-local traces.  It sometimes takes FOREVER to resolve the names
+otherwise.
+
+A quick check of what it's doing is to use the "-t" option that gives
+you visual feedback of its progress; it displays the number of packets
+processed so far, percentage done (unless compressed), and the
+"elapsed trace file time".  If it's not doing at least several hundred
+packets per second, then it's probably stuck doing DNS lookups.
+============================================================
+Wed Dec 16, 1998
+
+>> with "-t", why is the the percentage done more than 100%
+
+Probably one of:
+
+1) If it's a live file, ie one that tcpdump is currently writing, then the
+   "percentage done" is based on the original size of the file.  As
+   such, depending on how fast the file is growing compared to the
+   horsepower of the processor, the figure might be way off.
+
+2) If it's a compressed file, tcptrace doesn't know how long it'll be.  For
+   gzipped files of headers only, it usually runs up to around 100%+275% (or
+   almost 4 to one compression). 
+============================================================
+Thu Dec 17, 1998
+
+>> What are "post-loss acks"?
+
+Tcptrace tries to gather _ALL_ RTT samples, not just some of them as
+several TCP implementations do.  I called the case causing trouble
+"Post Loss":
+
+  Post-loss: an ACK arrives for a segment that was only xmitted once.
+   However, at least one of the segments that preceeded it was
+   retransmitted, so this ACK was delayed until a CUMACK could be
+   sent.  This is not a valid RTT sample therefore.
+
+tcptrace counts them and (optionally) marks them on the TSG output,
+but otherwise ignores them
+
+============================================================
+Thu Dec 17, 1998
+
+>> What does this mean in the long output with RTT stats: 
+>> 
+>>           For the following 5 RTT statistics, only ACKs for
+>>           multiply-transmitted segments (ambiguous ACKs) were
+>>           considered.  Times are taken from the last instance
+>>           of a segment.
+>> 
+
+This is some pretty old stuff that probably isn't useful anymore.
+When I first started looking at this, I was studying some TCP's
+without the Karn/Partridge stuff in them and this was a big deal.
+
+The point was to gather some stats about RTTs that might be confused
+by older TCPs, those that were taking samples from "ambiguous ACKs"
+(those for segments that were retransmitted).  For those ACKs, I kept
+track separately of the max,min,avg,stdev.  For the other RTT stats,
+those ACKs are ignored, as expected.
+
+I agree that the text is confusing, but I think that it's accurate
+given that explanation.
+
+============================================================
+Tue Dec 22, 1998
+
+
+>> Is it possible to use it for monitoring the whole traffic between
+>> two hosts (from and to all ports) in one throughput graph?
+
+The traffic module can do that.  First, you'd need to generate a dump
+file that contained ONLY the traffic between those two hosts (how to
+do that will depend on the kind of file).  Assuming it's a tcpdump
+file, you could:
+
+  tcpdump -r oldfile -w newfile host THEHOST1 and host THEHOST2
+
+then just use something like
+
+	tcptrace -xtraffic" -B" newfile
+
+to get bytes/second between the hosts for all traffic.
+
+============================================================
+Tue Jan 12, 1999
+
+>> I get the message indicating that there is the presence of hardware 
+>> duplicates. What exactly does that mean? Two ethernet cards with 
+>> the same MAC address? I don't think it could be a duplicate IP 
+>> address.
+
+That's a sanity check.  It means that tcptrace saw 2 packets with the
+same TCP header and identical ID fields at the IP level.  Because the
+IP headers (IPv4) are the same, it's unlikely that this is a
+retransmission.  Most likely, it means that those packets are crossing
+the local network twice, as in:
+
+       Router                Sender                  Receiver
+         |                     |                         |
+       ==========================================================
+pkt1:    ^---------------------<
+pkt2:    >-----------------------------------------------^
+
+once from the sender to a router (or hub), and then again from the router to
+the receiver.  Tcptrace flags the situation because otherwise those packets would
+be seen as retransmissions when they really aren't.  If you're seeing a lot of
+these (well, probably any at all), then there's a bad setup on your network.
+    
+============================================================
+Thu Mar  4, 1999
+
+>> I just have a question regarding the congestion window plot. I am
+>> wondering if this congestion is the cwnd on the sending side or it
+>> is the MIN (cwnd, adv_win) where adv_win is the receiving side
+>> advertised window size. Can you please explain how the congestion
+>> window is calculated (I assumed it is calculated since the tcp
+>> packet does not carry the congestion window information).
+
+The title of that plot is misleading and is titled "outstanding data"
+in the version that I'm working on now.  There's a high probability
+that what it's plotting is similar to the sender's congestion window,
+but in fact it is just a heuristic that plots the amount of non-acked
+data on the network (the different between the highest byte sent and
+the highest byte ACKed).
+============================================================
+Tue Mar  9, 1999
+
+>> Can I use the program in "real-time" mode?
+
+Sort of, but it depends on what you're trying to do.  For example:
+
+	tcpdump -s4096 -w- | tcptrace -e stdin
+
+will create data files for all connections as they're opened.  For
+functions that give answers WHILE processing, this works fine.  For
+functions that don't answer until they're done, this will require a
+little more fiddling.  For example:
+
+	tcpdump -c100 -s4096 -w- | tcptrace -e -l stdin
+
+for grab the next 100 packets and then stop, while extracting the
+contents and then doing a "long" output listing.
+============================================================
+Mon Apr 19, 1999
+
+Somebody pointed out that there's now a windows port of tcpdump.  I
+don't know anything about it except the URL:
+
+http://netgroup-serv.polito.it/tools/analyzer/Install/windump/
+============================================================
+Tue Apr 27, 1999
+
+>> What does the "truncated data" and "truncated packets" mean ??  I
+>> ask this because I do not see any anomalies using our sniffer and
+>> tcpdump, but this field has us confused.
+
+"truncated" refers to the difference between the size of the packets
+"on the wire" and the number of bytes saved in the dump file.  With
+tcpdump and snoop, for example, you can set the "snap length", which
+controls the maximum amount of data saved from each packet.  A
+1500-byte packet grabbed with a 128-byte snap-length is "truncated".
+Because some of the analysis from various modules and features
+requires full packet data, tcptrace counts and prints the truncated
+segments ("truncated packets") and the amount of missing data
+("truncated data").
+============================================================
+Wed Apr 28, 1999
+
+>> I was wondering if you could please explan what the following actually
+>> mean in the detailed output:
+>> 
+>> data xmit time:        1.377 secs
+
+That's the elapsed time of the connection from the first segment
+containing data to the last segment containing data.  It discounts the
+SYN and FIN handshaking.
+
+
+>> idletime max:         126384.9 ms
+
+That's the longest period during which no packets were sent (data or ACK)
+from that side of the connection.
+============================================================
+Thu May 20, 1999
+
+>> Is there a version of tcpdump for wintel machines?
+
+I'm told that there's one here:
+
+  http://netgroup-serv.polito.it/analyzer/install/windump/default.htm
+
+but I've never used it.
+============================================================
+Tue Jun  1, 1999
+
+>> 2. I get some 'Z' letters printed out by xplot on a sequence number
+>> graph, and I couldn't find anything about this in the doc I found. Do
+>> you know what they mean ?
+
+Those are "zero windows".  That's when the receiver of the data
+advertises a receive window of 0, meaning that it can't accept any
+more data.  That normally means that the receiving application can't
+keep up.  Normally, they're followed by a "gratuitious ACK" from the
+receiver advertising additional buffer space, which will cause the
+sender to send more data.  If the sender is impatient (which it's
+allowed to be) or the gratuitious ACK is lost, the sender can send
+additional data anyway (a zero window probe).

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,10 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
+static char const copyright[] =
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+static char const rcsid[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/filter.c,v 5.12 1999/06/22 20:53:23 sdo Exp $";
 
 
 #include <stdio.h>
@@ -40,6 +44,7 @@ static char *PrintConst(struct filter_node *pf);
 static char *PrintVar(struct filter_node *pf);
 static void EvalRelopUnsigned(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
 static void EvalRelopSigned(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
+static void EvalRelopIpaddr(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
 static void EvalFilter(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
 static void EvalRelopString(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
 static void EvalVariable(tcp_pair *ptp, struct filter_res *pres, struct filter_node *pf);
@@ -73,6 +78,8 @@ Op2Str(
       case OP_TIMES:		return("*");
       case OP_DIVIDE:		return("/");
       case OP_MOD:		return("%");
+      case OP_BAND:		return("&");
+      case OP_BOR:		return("|");
       default:			return("??");
     }
 }
@@ -101,9 +108,11 @@ Vartype2BStr(
       case V_ULLONG:	
       case V_ULONG:	
       case V_USHORT:	return("UNSIGNED");
+
+      case V_IPADDR:	return("IPADDR");
     }
 
-    fprintf(stderr,"Vartype2Str: Internal error, unknown type %d\n",
+    fprintf(stderr,"Vartype2BStr: Internal error, unknown type %d\n",
 	    vartype);
     exit(-1);
 }
@@ -128,6 +137,7 @@ Vartype2Str(
       case V_ULLONG:	return("ULLONG");
       case V_FUNC:	return("FUNC");
       case V_UFUNC:	return("UFUNC");
+      case V_IPADDR:	return("IPADDR");
     }
 
     fprintf(stderr,"Vartype2Str: Internal error, unknown type %d\n",
@@ -177,7 +187,7 @@ MakeUnaryNode(
     enum optype op,
     struct filter_node *pf_in)
 {
-    struct filter_node *pf = NULL;
+    struct filter_node *pf_ret = NULL;
     struct filter_node *pf1;
 
     /* walk everybody on the list and copy */
@@ -190,19 +200,19 @@ MakeUnaryNode(
 
 	pf_new = MallocZ(sizeof(struct filter_node));
 	pf_new->op = op;
-	pf_new->vartype = pf->vartype;
+	pf_new->vartype = pf1->vartype;
 	pf_new->un.unary.pf = pf1;
 
 	/* add to the linked list of unaries */
-	if (pf == NULL) {
-	    pf = pf_new;
+	if (pf_ret == NULL) {
+	    pf_ret = pf_new;
 	} else {
-	    pf_new->next_var = pf;
-	    pf = pf_new;
+	    pf_new->next_var = pf_ret;
+	    pf_ret = pf_new;
 	}
     }
 
-    return(pf);
+    return(pf_ret);
 }
 
 
@@ -217,6 +227,27 @@ MakeDisjunction(
     /* construct a high-level OR to hook them together */
     pf = MallocZ(sizeof(struct filter_node));
     pf->op = OP_OR;
+    pf->vartype = V_BOOL;
+
+    /* hook the two opnodes together */
+    pf->un.binary.left = left;
+    pf->un.binary.right = right;
+
+    /* return the OR node */
+    return(pf);
+}
+
+
+static struct filter_node *
+MakeConjunction(
+    struct filter_node *left,
+    struct filter_node *right)
+{
+    struct filter_node *pf;
+
+    /* construct a high-level AND to hook them together */
+    pf = MallocZ(sizeof(struct filter_node));
+    pf->op = OP_AND;
     pf->vartype = V_BOOL;
 
     /* hook the two opnodes together */
@@ -253,6 +284,8 @@ MakeOneBinaryNode(
       case OP_TIMES:
       case OP_DIVIDE:
       case OP_MOD:
+      case OP_BAND:
+      case OP_BOR:
 	if ((pf_left->vartype != V_LLONG) && (pf_left->vartype != V_ULLONG)) {
 	    fprintf(stderr,"Arithmetic operator applied to non-number: ");
 	    PrintFilter(pf_left);
@@ -282,6 +315,22 @@ MakeOneBinaryNode(
       case OP_GREATER_EQ:
       case OP_LESS:
       case OP_LESS_EQ:
+	/* IP addresses are special case */
+	if ((pf_left->vartype == V_IPADDR) ||
+	    (pf_right->vartype == V_IPADDR)) {
+	    /* must BOTH be addresses */
+	    if ((pf_left->vartype != V_IPADDR) ||
+		(pf_right->vartype != V_IPADDR)) {
+		fprintf(stderr,
+			"IPaddreses can only be compared with each other: ");
+		PrintFilter(pf);
+		exit(-1);
+	    }
+	    pf->vartype = V_BOOL;
+	    break;
+	}
+
+	/* ... else, normal numeric stuff */
 	if ((pf_left->vartype != V_LLONG) && (pf_left->vartype != V_ULLONG)) {
 	    fprintf(stderr,"Relational operator applied to non-number: ");
 	    PrintFilter(pf_left);
@@ -328,7 +377,7 @@ MakeBinaryNode(
     struct filter_node *pf_left,
     struct filter_node *pf_right)
 {
-    struct filter_node *pf = NULL;
+    struct filter_node *pf_ret = NULL;
     struct filter_node *pf1;
     struct filter_node *pf2;
 
@@ -337,9 +386,13 @@ MakeBinaryNode(
 	    struct filter_node *pf_new;
 	    /* make one copy */
 	    pf_new = MakeOneBinaryNode(op,pf1,pf2);
+	    if ((pf1->conjunction) || (pf2->conjunction))
+		pf_new->conjunction = TRUE;
 
 	    if (debug>1)
-		printf("MakeBinaryNode: made %s\n", Filter2Str(pf_new));
+		printf("MakeBinaryNode: made %s (%c)\n",
+		       Filter2Str(pf_new),
+		       pf_new->conjunction?'c':'d');
 
 	    /* hook together as appropriate */
 	    switch (op) {
@@ -348,12 +401,14 @@ MakeBinaryNode(
 	      case OP_TIMES:
 	      case OP_DIVIDE:
 	      case OP_MOD:
+	      case OP_BAND:
+	      case OP_BOR:
 		/* just keep a list */
-		if (pf == NULL) {
-		    pf = pf_new;
+		if (pf_ret == NULL) {
+		    pf_ret = pf_new;
 		} else {
-		    pf_new->next_var = pf;
-		    pf = pf_new;
+		    pf_new->next_var = pf_ret;
+		    pf_ret = pf_new;
 		}
 		break;
 
@@ -365,11 +420,15 @@ MakeBinaryNode(
 	      case OP_GREATER_EQ:
 	      case OP_LESS:
 	      case OP_LESS_EQ:
-		/* terminate the wildcard list by making OR nodes */
-		if (pf == NULL)
-		    pf = pf_new;
-		else
-		    pf = MakeDisjunction(pf,pf_new);
+		/* terminate the wildcard list by making OR nodes or AND nodes*/
+		if (pf_ret == NULL)
+		    pf_ret = pf_new;
+		else {
+		    if ((pf1->conjunction) || (pf2->conjunction))
+			pf_ret = MakeConjunction(pf_ret,pf_new);
+		    else
+			pf_ret = MakeDisjunction(pf_ret,pf_new);
+		}
 		break;
 
 	      default:
@@ -381,7 +440,7 @@ MakeBinaryNode(
 	}
     }
 
-    return(pf);
+    return(pf_ret);
 }
 
 
@@ -397,8 +456,17 @@ MakeVarNode(
     } else if (strncasecmp(varname,"s_",2) == 0) {
 	/* just server */
 	pf = LookupVar(varname+2,FALSE);
+    } else if (strncasecmp(varname,"b_",2) == 0) {
+	/* they want a CONjunction, look up BOTH and return a list */
+	pf = LookupVar(varname+2,TRUE);/* client */
+	pf->next_var = LookupVar(varname+2,FALSE); /* server */
+	pf->conjunction = pf->next_var->conjunction = TRUE;
+    } else if (strncasecmp(varname,"e_",2) == 0) {
+	/* they want a DISjunction, look up BOTH and return a list */
+	pf = LookupVar(varname+2,TRUE);/* client */
+	pf->next_var = LookupVar(varname+2,FALSE); /* server */
     } else {
-	/* look up BOTH and return a list */
+	/* look up BOTH and return a list (same as e_) */
 	pf = LookupVar(varname,TRUE);/* client */
 	pf->next_var = LookupVar(varname,FALSE); /* server */
     }
@@ -467,6 +535,22 @@ MakeUnsignedConstNode(
     return(pf);
 }
 
+struct filter_node *
+MakeIPaddrConstNode(
+    ipaddr *pipaddr)
+{
+    struct filter_node *pf;
+
+    pf = MallocZ(sizeof(struct filter_node));
+
+    pf->op = OP_CONSTANT;
+    pf->vartype = V_IPADDR;
+    pf->un.constant.pipaddr = pipaddr;
+
+    return(pf);
+}
+
+
 /**************************************************************/
 /**************************************************************/
 /**							     **/
@@ -485,7 +569,8 @@ PrintConst(
     switch (pf->vartype) {
       case V_ULLONG:
 	if (debug)
-	    sprintf(buf,"ULLONG(%llu)",pf->un.constant.u_longint);
+	    sprintf(buf,"ULLONG(%llu)",
+		    pf->un.constant.u_longint);
 	else
 	    sprintf(buf,"%llu",pf->un.constant.u_longint);
 	break;
@@ -503,9 +588,15 @@ PrintConst(
 	break;
       case V_BOOL:
 	if (debug)
-	    sprintf(buf,"BOOL(%s)",  pf->un.constant.bool?"TRUE":"FALSE");
+	    sprintf(buf,"BOOL(%s)",  BOOL2STR(pf->un.constant.bool));
 	else
-	    sprintf(buf,"%s", pf->un.constant.bool?"TRUE":"FALSE");
+	    sprintf(buf,"%s", BOOL2STR(pf->un.constant.bool));
+	break;
+      case V_IPADDR:
+	if (debug)
+	    sprintf(buf,"IPADDR(%s)", HostAddr(*pf->un.constant.pipaddr));
+	else
+	    sprintf(buf,"%s", HostAddr(*pf->un.constant.pipaddr));
 	break;
       default: {
 	    fprintf(stderr,"PrintConst: unknown constant type %d (%s)\n",
@@ -527,11 +618,12 @@ PrintVar(
 
 
     if (debug)
-	sprintf(buf,"VAR(%s,'%s%s',%d)",
+	sprintf(buf,"VAR(%s,'%s%s',%d,%c)",
 		Vartype2Str(pf->vartype),
 		pf->un.variable.fclient?"c_":"s_",
 		pf->un.variable.name,
-		pf->un.variable.offset);
+		pf->un.variable.offset,
+		pf->conjunction?'c':'d');
     else
 	sprintf(buf,"%s%s",
 		pf->un.variable.fclient?"c_":"s_",
@@ -588,7 +680,7 @@ Res2Str(
       case V_ULLONG:	sprintf(buf,"ULLONG(%llu)",pres->val.u_longint); break;
       case V_LLONG:	sprintf(buf,"LLONG(%lld)", pres->val.longint); break;
       case V_STRING:	sprintf(buf,"STRING(%s)",pres->val.string); break;
-      case V_BOOL:	sprintf(buf,"BOOL(%s)",  pres->val.bool?"TRUE":"FALSE"); break;
+      case V_BOOL:	sprintf(buf,"BOOL(%s)",  BOOL2STR(pres->val.bool)); break;
       default: {
 	  fprintf(stderr,"Res2Str: unknown constant type %d (%s)\n",
 		  pres->vartype, Vartype2Str(pres->vartype));
@@ -649,6 +741,8 @@ PrintFilterInternal(
       case OP_TIMES:
       case OP_DIVIDE:
       case OP_MOD:
+      case OP_BAND:
+      case OP_BOR:
 	sprintf(buf,"(%s%s%s)",
 		PrintFilterInternal(pf->un.binary.left),
 		Op2Str(pf->op),
@@ -706,6 +800,12 @@ LookupVar(
 	      case V_UFUNC:	
 		pf->vartype = V_ULLONG; /* we'll promote on the fly */
 		break;
+	      case V_BOOL:	
+		pf->vartype = V_BOOL;
+		break;
+	      case V_IPADDR:	
+		pf->vartype = V_IPADDR;
+		break;
 	      default:
 		pf->vartype = pf->vartype; 
 	    }
@@ -718,7 +818,7 @@ LookupVar(
 	    if ((pfl->vartype == V_FUNC) || (pfl->vartype == V_UFUNC))
 		pf->un.variable.offset = (u_int)ptr;
 	    else
-		pf->un.variable.offset = ptr - (void *)&ptp_dummy;
+		pf->un.variable.offset = (char *)ptr - (char *)&ptp_dummy;
 	    pf->un.variable.fclient = fclient;
 
 	    return(pf);
@@ -838,6 +938,27 @@ Var2Signed(
 }
 
 
+static ipaddr *
+Var2Ipaddr(
+    tcp_pair *ptp,
+    struct filter_node *pf)
+{
+    void *ptr;
+
+    ptr = (char *)ptp + pf->un.variable.offset;
+
+    switch (pf->un.variable.realtype) {
+      case V_IPADDR: return(ptr);
+      default: {
+	  fprintf(stderr,
+		  "Filter eval error, can't convert variable type %s to ipaddr\n",
+		  Vartype2Str(pf->un.variable.realtype));
+	  exit(-1);
+      }
+    }
+}
+
+
 
 static u_long
 Var2Unsigned(
@@ -905,6 +1026,22 @@ Const2Signed(
 }
 
 
+static ipaddr *
+Const2Ipaddr(
+    struct filter_node *pf)
+{
+    switch (pf->vartype) {
+      case V_IPADDR:	return(pf->un.constant.pipaddr);
+      default: {
+	  fprintf(stderr,
+		  "Filter eval error, can't convert constant type %d (%s) to ipaddr\n",
+		  pf->vartype, Vartype2Str(pf->vartype));
+	  exit(-1);
+      }
+    }
+}
+
+
 static void
 EvalMathopUnsigned(
     tcp_pair *ptp,
@@ -931,9 +1068,11 @@ EvalMathopUnsigned(
       case OP_TIMES:	  ret = (varl * varr); break;
       case OP_DIVIDE:	  ret = (varl / varr); break;
       case OP_MOD:	  ret = (varl % varr); break;
+      case OP_BAND:	  ret = (varl & varr); break;
+      case OP_BOR:	  ret = (varl | varr); break;
       default: {
 	  fprintf(stderr,"EvalMathodUnsigned: unsupported binary op: %d (%s)\n",
-		  pf->op, Vartype2Str(pf->op));
+		  pf->op, Op2Str(pf->op));
 	  exit(-1);
       }
     }
@@ -983,9 +1122,11 @@ EvalMathopSigned(
       case OP_TIMES:	  ret = (varl * varr); break;
       case OP_DIVIDE:	  ret = (varl / varr); break;
       case OP_MOD:	  ret = (varl % varr); break;
+      case OP_BAND:	  ret = (varl & varr); break;
+      case OP_BOR:	  ret = (varl | varr); break;
       default: {
 	  fprintf(stderr,"EvalMathodSigned: unsupported binary op: %d (%s)\n",
-		  pf->op, Vartype2Str(pf->op));
+		  pf->op, Op2Str(pf->op));
 	  exit(-1);
       }
     }
@@ -1039,7 +1180,7 @@ EvalRelopUnsigned(
       case OP_NEQUAL:	  ret = (varl != varr); break;
       default: {
 	  fprintf(stderr,"EvalUnsigned: unsupported binary op: %d (%s)\n",
-		  pf->op, Vartype2Str(pf->op));
+		  pf->op, Op2Str(pf->op));
 	  exit(-1);
       }
     }
@@ -1055,7 +1196,7 @@ EvalRelopUnsigned(
 	printf("EvalUnsigned %lu %s %lu returns %s\n",
 #endif /* HAVE_LONG_LONG */
 	       varl, Op2Str(pf->op), varr,
-	       ret?"TRUE":"FALSE");
+	       BOOL2STR(ret));
 
 
     return;
@@ -1107,10 +1248,72 @@ EvalRelopSigned(
 	printf("EvalSigned %ld %s %ld returns %s\n",
 #endif /* HAVE_LONG_LONG */
 	       varl, Op2Str(pf->op), varr, 
-	       ret?"TRUE":"FALSE");
+	       BOOL2STR(ret));
 
     return;
 }
+
+
+
+
+/* evaluate a leaf-node IPaddress */
+static void
+EvalRelopIpaddr(
+    tcp_pair *ptp,
+    struct filter_res *pres,
+    struct filter_node *pf)
+{
+    ipaddr *varl;
+    ipaddr *varr;
+    struct filter_res res;
+    int result;
+    Bool ret;
+
+     /* grab left hand side */
+     EvalFilter(ptp,&res,pf->un.binary.left);
+     varl = res.val.pipaddr;
+
+     /* grab right hand side */
+     EvalFilter(ptp,&res,pf->un.binary.right);
+     varr = res.val.pipaddr;
+
+     /* compare the 2 addresses */
+     result = IPcmp(varl,varr);
+
+     /* always evaluates FALSE unless both same type */
+     if (result == -2) {
+	 if (debug) {
+	     printf("EvalIpaddr %s", HostAddr(*varl));
+	     printf("%s fails, different addr types\n",
+		    HostAddr(*varr));
+	 }
+	 ret = FALSE;
+     } else {
+	 switch (pf->op) {
+	   case OP_GREATER:     ret = (result >  0); break;
+	   case OP_GREATER_EQ:  ret = (result >= 0); break;
+	   case OP_LESS:        ret = (result <  0); break;
+	   case OP_LESS_EQ:     ret = (result <= 0); break;
+	   case OP_EQUAL:       ret = (result == 0); break;
+	   case OP_NEQUAL:      ret = (result != 0); break;
+	   default: {
+	       fprintf(stderr,"EvalIpaddr: internal error\n");
+	       exit(-1);
+	   }
+	 }
+     }
+
+     /* fill in the answer */
+     pres->vartype = V_BOOL;
+     pres->val.bool = ret;
+
+     if (debug) {
+	 printf("EvalIpaddr %s %s", HostAddr(*varl), Op2Str(pf->op));
+	 printf("%s returns %s\n", HostAddr(*varr), BOOL2STR(ret));
+     }
+
+     return;
+ }
 
 
 
@@ -1160,7 +1363,7 @@ EvalRelopString(
     if (debug)
 	printf("EvalString '%s' %s '%s' returns %s\n",
 	       varl, Op2Str(pf->op), varr, 
-	       ret?"TRUE":"FALSE");
+	       BOOL2STR(ret));
 
     return;
 }
@@ -1201,9 +1404,15 @@ EvalVariable(
 	pres->val.bool = (Var2Unsigned(ptp,pf) != 0);
 	break;
 
+      case V_IPADDR:
+	pres->vartype = V_IPADDR;
+	pres->val.pipaddr = Var2Ipaddr(ptp,pf);
+	break;
+
       default:
 	fprintf(stderr,"EvalVariable: unknown var type %d (%s)\n",
 		pf->vartype, Vartype2Str(pf->vartype));
+	exit(-1);
     }
 
 }
@@ -1245,8 +1454,13 @@ EvalConstant(
 	pres->val.bool = (Var2Unsigned(ptp,pf) != 0);
 	break;
 
+      case V_IPADDR:
+	pres->vartype = V_IPADDR;
+	pres->val.pipaddr = Const2Ipaddr(pf);
+	break;
+
       default:
-	fprintf(stderr,"EvalVariable: unknown var type %d (%s)\n",
+	fprintf(stderr,"EvalConstant: unknown var type %d (%s)\n",
 		pf->vartype, Vartype2Str(pf->vartype));
     }
 
@@ -1299,11 +1513,15 @@ EvalFilter(
 	    EvalRelopString(ptp,&res,pf);
 	    pres->vartype = V_LLONG;
 	    pres->val.longint = res.val.longint;
+	} else if (pf->un.binary.left->vartype == V_IPADDR) {
+	    EvalRelopIpaddr(ptp,&res,pf);
+	    pres->vartype = V_BOOL;
+	    pres->val.bool = res.val.bool;
 	} else {
 	    fprintf(stderr,
 		    "EvalFilter: binary op %d (%s) not supported on data type %d (%s)\n",
 		    pf->op, Op2Str(pf->op),
-		    pf->vartype, Vartype2Str(pf->vartype));
+		    pf->vartype, Vartype2Str(pf->un.binary.left->vartype));
 	    exit(-1);
 	}
 	break;
@@ -1313,6 +1531,8 @@ EvalFilter(
       case OP_TIMES:
       case OP_DIVIDE:
       case OP_MOD:
+      case OP_BAND:
+      case OP_BOR:
 	if (pf->un.binary.left->vartype == V_ULLONG) {
 	    EvalMathopUnsigned(ptp,&res,pf);
 	    pres->vartype = V_ULLONG;
@@ -1325,7 +1545,7 @@ EvalFilter(
 	    fprintf(stderr,
 		    "EvalFilter: binary op %d (%s) not supported on data type %d (%s)\n",
 		    pf->op, Op2Str(pf->op),
-		    pf->vartype, Vartype2Str(pf->vartype));
+		    pf->vartype, Vartype2Str(pf->un.binary.left->vartype));
 	    exit(-1);
 	}
 	break;
@@ -1351,7 +1571,7 @@ EvalFilter(
 	    fprintf(stderr,
 		    "EvalFilter: binary op %d (%s) not supported on data type %d (%s)\n",
 		    pf->op, Op2Str(pf->op),
-		    pf->vartype, Vartype2Str(pf->vartype));
+		    pf->vartype, Vartype2Str(pf->un.binary.left->vartype));
 	    exit(-1);
 	}
 	break;
@@ -1402,7 +1622,7 @@ PassesFilter(
     if (debug)
 	printf("PassesFilter('%s<->%s') returns %s\n",
 	       ptp->a_endpoint, ptp->b_endpoint,
-	       ret?"TRUE":"FALSE");
+	       BOOL2STR(ret));
 
     return(ret);
 }
@@ -1415,13 +1635,13 @@ HelpFilterVariables(void)
 
     fprintf(stderr,"Filter Variables:\n");
 
-    fprintf(stderr,"\tvariable name        type       description\n");
-    fprintf(stderr,"\t------------------   --------   -----------------------\n");
+    fprintf(stderr,"  variable name      type      description\n");
+    fprintf(stderr,"  -----------------  --------  -----------------------\n");
 
     for (i=0; i < NUM_FILTERS; ++i) {
 	struct filter_line *pf = &filters[i];
 
-	fprintf(stderr,"\t%-18s   %-8s   %s\n",
+	fprintf(stderr,"  %-17s  %-8s  %s\n",
 		pf->varname, Vartype2BStr(pf->vartype),pf->descr);
     }
 }
@@ -1440,7 +1660,10 @@ Filter Syntax:\n\
 	anything from the above table with a prefix of either 'c_' meaning\n\
         the one for the Client or 's_' meaning the value for the Server.  If\n\
 	the prefix is omitted, it means \"either one\" (effectively becoming\n\
-	\"c_VAR OR s_VAR)\").\n\
+	\"c_VAR OR s_VAR)\").  As shorthand for a conjunction instead, you can\n\
+	use the syntax 'b_' (as in b_mss>100), meaning 'B'oth, (effectively\n\
+	becoming \"c_VAR AND s_VAR)\").  For completeness, 'e_' means 'E'ither,\n\
+	which is the normal default with no prefix.\n\
      constant:\n\
 	strings:	anything in double quotes\n\
 	booleans:	TRUE FALSE\n\
@@ -1448,7 +1671,7 @@ Filter Syntax:\n\
   arithmetic operations: \n\
      any of the operators + - * / %% \n\
      performed on 'numbers'.  Normal operator precedence\n\
-	 is maintained (or use parens)\n\
+        is maintained (or use parens)\n\
   relational operators\n\
      any of < > = != >= <= applied to 'numbers'\n\
   boolean operators\n\
@@ -1466,10 +1689,11 @@ Filter Syntax:\n\
      most common synonyms for NOT, AND, and OR also work (!,&&,||,-a,-o)\n\
 	(for those of us with very poor memories\n\
 Examples\n\
-  tcptrace '-fpackets>10' file\n\
-  tcptrace '-fc_packets>10 OR s_packets>20 ' file\n\
-  tcptrace '-f c_packets+10 > s_packets ' file\n\
+  tcptrace '-fsegs>10' file\n\
+  tcptrace '-fc_segs>10 OR s_segs>20 ' file\n\
+  tcptrace '-f c_segs+10 > s_segs ' file\n\
   tcptrace -f'thruput>10000 and segs > 100' file\n\
+  tcptrace '-fb_segs>10' file\n\
 ", PASS_FILTER_FILENAME, PASS_FILTER_FILENAME);
 }
 
@@ -1544,7 +1768,7 @@ VFuncTput(
     if (etime == 0.0)
 	return(0);
 
-    tput_f = (double)(ptcb->data_bytes-ptcb->rexmit_bytes) / etime;
+    tput_f = (double)(ptcb->unique_bytes) / etime;
     tput = (u_llong)(tput_f+0.5);
 
     if (debug)

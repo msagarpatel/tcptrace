@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_versnum[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/versnum.c,v 1.1 1998/10/17 00:24:25 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/versnum.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
 
 #include <stdio.h>
 #include "version.h"

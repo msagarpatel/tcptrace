@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_version[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/version.c,v 1.2 1998/03/05 01:04:45 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/version.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
 
 
 /* build information */

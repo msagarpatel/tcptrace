@@ -224,3 +224,103 @@
     grows above the machine's physical memory.  It can now continue to run
     well under these conditions (up to available swap space), before it
     just thrashed itself to a standstill.
+5.0.15 - Fri Nov 20, 1998
+  possible fix for pipe() failure with too many files open
+  added some minor argument parsing checks
+  added a few extended arguments "--foo" to control lesser-used functions
+  fixed PAGESIZE reference for Craig Metz - not under some Linux
+  fixed error in stats when SYNs and FINs rexmitted, unique bytes was wrong
+    (which threw off missed data and throughput)
+  fixed a bug where rexmitted SYNs were not being included in the
+    rexmit counts (also fixed marking on tsg graphs)
+  added another case to the connection-splicing code to fix something
+    I saw with FACK/SACK
+  fixed references to the idle_max counter to give the same answer everywhere
+    (some machines were overflowing sooner than others, I changed the math)
+5.1.0 - Tue Dec  1, 1998
+  Getting ready for a new multi-platform distribution
+5.1.1 - Wed Dec  9, 1998
+  Fixed bug from Brian Utterback, both RTT graphs had same title
+  ... which led me to discover a rather obscure bug that caused the first RTT plot
+      to get corrupted, but only if no other plots were requested
+5.1.2 - Mon Dec 14, 1998
+  Added extended options for 
+	  --showrttdongles   mark non-RTT-generating ACKs with special symbols
+	  --noshowrttdongles DON'T mark non-RTT-generating ACKs with special symbols
+	  --showdupack3	     mark triple dupacks on time sequence graphs
+	  --noshowdupack3    DON't mark triple dupacks on time sequence graphs
+	  --show0lensegs     show zero length packets on time sequence graphs
+	  --noshow0lensegs   DON'T show zero length packets on time sequence graphs
+    made the default for the RTT dongles FALSE, they're not generally useful
+  Minor Docs changes for filtering
+  Added new filter syntax prefix 'b_'
+     to recap:
+        # 'c_' means just "Client"
+	./tcptrace '-fc_segs>100' file
+	Output filter: (c_segs>100)
+
+        # 's_' means just "Server"
+	./tcptrace '-fs_segs>100' file
+	Output filter: (s_segs>100)
+
+        # no prefix, either one
+	./tcptrace '-fsegs>100' file
+	Output filter: ((c_segs>100)OR(s_segs>100))
+
+        # 'e_' means "Either", same as without prefix
+	./tcptrace '-fe_segs>100' file
+	Output filter: ((c_segs>100)OR(s_segs>100))
+
+        # 'b_' means "Both"
+	./tcptrace '-fb_segs>100' file
+	Output filter: ((c_segs>100)AND(s_segs>100))
+  Added initial support for the NLANR tsh packet format
+  bug fix, packets/connection were being passed to modules even though they
+    were supposed to be ignored (caused mod_rtt to break, probably others too)
+  name resolution: split in half to
+		resolve_ipaddresses
+		resolve_ports
+	+-n still toggles both, but extended args let you control either
+  changed "-o" option to allow "-oM-N"
+  bug fix from Jamshid Mahdavi, sack blocks not converted to local byte order
+	(made intel platforms plot/print sacks wrong)
+  added support for TCP/UDP/IP checksum verification
+	only implemented for IPv4
+	--checksum turns it on, it's expensive
+5.1.3 - Tue Jan 19, 1999
+  added FDDI support in snoop module (for Brian Utterback)
+  changes from Jun-ichiro Hagino, made compliant with latest IPv6
+   API/implementations (just changes to constant names in ipv6.[ch])
+  minor bug fixes to tcplib module
+5.1.4 - Wed Jan 27, 1999
+  fixed bug in congestion window graph, REALLY long connections would
+    cause a counter to wrap around, messing up the average
+  fixed major bug in tcplib module, ftp data and control ports were backwards
+  The -O options was writing IPv6 packets incorrectly (wrong length)
+5.1.5 - Wed Feb 17, 1999
+  fixed bug in reading .tcptracerc files, caused core dump on some files
+  when printing packets, IP options are now printed too
+5.1.6 - Tue Mar 16, 1999
+  added extended arg for triple dupack stats (--dupack3_data)
+    by default: if a segment has data, it can't be a triple dupack
+    optional:   if a segment has data, it CAN be a triple dupack
+  bug fix from Brian Utterback in snoop.c.  Obscure alignment problem fixed.
+  added "total data" graph to traffic module
+  made counters "long long" in traffic module
+  patches from Kevin Lahey to print ECN information
+  patches from Kevin Lahey to read LBL Network Simulator (ns) output
+  allow unambiguous prefixes of extended args (--foo)
+  added --dump_packet_data to add TCP/UDP packet DATA printout along
+    with individual packet dumps (--dump is good enough prefix)
+  bug fixed to the http module from Daikichi Osuga (byte sex problems)
+  added support for DLT_ATM_RFC1483-format tcpdump files
+5.2.0 - Tue Sep  7, 1999
+  patch in gache.c for Linux/Redhat stupidity with the strncmp() macro
+  fixed ipv6.h to work with the way that Linux/Redhat built IPv6
+  fixed bug in recording window stats from SYN packets when using scaling
+  fixed off-by-one in final report on number of packets seen
+  fixed ipv6 packet printing byte-sex problems
+5.2.1 - Wed Sep 15, 1999
+  fixed bug (probably introduced in 5.2.0) that kept -B from working
+  fixed bug in snoop-format code that caused it to fail if it saw a
+    non-IP packet

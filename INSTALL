@@ -3,7 +3,6 @@ OK, to the best of my knowledge, you should be able to get tcptrace to
 compile and run under:
 
 Solaris
-SunOS (pre SunOS5)
 NetBSD
 FreeBSD
 Linux

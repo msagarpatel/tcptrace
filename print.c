@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.31 1998/08/14 20:48:27 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/print.c,v 5.10 1999/09/07 22:40:15 sdo Exp $";
 
 
 /* 
@@ -48,6 +48,7 @@ static char *ParenHostName(struct ipaddr addr);
 static void printipv4(struct ip *pip, void *plast);
 static void printipv6(struct ipv6 *pipv6, void *plast);
 static char *ipv6addr2str(struct in6_addr addr);
+static void printipv4_opt_addrs(char *popt, int ptr, int len);
 
 
 
@@ -196,6 +197,10 @@ printipv4(
     printf("\t     TTL: %d\n", pip->ip_ttl);
     printf("\t     LEN: %d\n", ntohs(pip->ip_len));
     printf("\t      ID: %d\n", ntohs(pip->ip_id));
+    printf("\t   CKSUM: 0x%04x", ntohs(pip->ip_sum));
+    if (verify_checksums)
+	printf(" (%s)", ip_cksum_valid(pip,plast)?"CORRECT":"WRONG");
+    printf("\n");
 
     /* fragmentation stuff */
     offset = ntohs(pip->ip_off) << 3;
@@ -211,9 +216,105 @@ printipv4(
     }
     if ((ntohs(pip->ip_off) & IP_DF) != 0)
 	printf("  Don't Fragment\n");	/* don't fragment */
+
+    /* print IP options if there are any */
+    if (pip->ip_hl != 5) {
+	char *popt = (char *)pip + 20;
+	void *plast_option;
+
+	/* find the last option in the file */
+	plast_option = (char *)pip+4*pip->ip_hl-1;
+	if (plast_option > plast)
+	    plast_option = plast; /* truncated shorter than that */
+
+	printf("\t Options: %d bytes\n", 4*pip->ip_hl-20);
+	while ((void *)popt <= plast_option) {
+	    u_int opt = *popt;
+	    u_int len = *(popt+1);
+	    u_int ptr = *(popt+2);
+	    int optcopy = (opt&0x80);
+	    int optclass = (opt&0x60)>>5;
+	    int optnum = (opt&0x1f);
+
+	    /* check for truncated option */
+	    if ((void *)(popt+len-1) > plast) {
+		printf("\t    IP option (truncated)\n");
+		continue;
+	    }
+
+	    printf("\t    IP option %d (copy:%c  class:%s  number:%d)\n",
+		   opt,
+		   optcopy==0?'N':'Y',
+		   optclass==0?"ctrl":
+		   optclass==1?"reserved1":
+		   optclass==2?"debug":
+		   optclass==3?"reserved3":"unknown",
+		   optnum);
+
+
+	    switch(opt) {
+	      case 3:
+		printf("\t      Loose source route:  len: %d  ptr:%d\n",
+		       len, ptr);
+		printipv4_opt_addrs(popt, ptr, len);
+		break;
+	      case 7:
+		printf("\t      Record Route:  len: %d  ptr:%d\n",
+		       len, ptr);
+		printipv4_opt_addrs(popt, ptr, len);
+		break;
+	      case 9:
+		printf("\t      Strict source route:  len: %d  ptr:%d\n",
+		       len, ptr);
+		printipv4_opt_addrs(popt, ptr, len);
+		break;
+	      case 4:
+		printf("\t      Timestamps:  len: %d  ptr:%d\n",
+		       len, ptr);
+		break;
+	      case 0:
+		printf("\t      EOL\n");
+		len = 1;
+		break;
+	      case 1:
+		printf("\t      PADDING\n");
+		len = 1;
+		break;
+	      default:
+		printf("\t      Unknown Option %d, len: %d\n", opt, len);
+		break;
+	    }
+	    if (len <= 0)
+		break;
+	    popt += len;
+	}
+    }
+
     printf("\n");
 }
 
+
+/* print out the little table in the source route and record route options */
+static void
+printipv4_opt_addrs(
+    char *popt,
+    int ptr,
+    int len)
+{
+    struct in_addr ina;
+    int nptr;
+    int i;
+
+    for (nptr=4,i=1;nptr < len; nptr += 4,++i) {
+	memcpy(&ina.s_addr,popt+nptr-1,4);
+	if (nptr < ptr)
+	    printf("\t        %d: %-15s  %s\n",
+		   i, inet_ntoa(ina),
+		   HostName(*IPV4ADDR2ADDR(&ina)));
+	else
+	    printf("\t        %d: xxxxxxxxxxx\n", i);
+    }
+}
 
 
 static void
@@ -273,23 +374,56 @@ printtcp_packet(
 	hex?"\t     ACK: 0x%08x\n":"\t     ACK: %d\n",
 	ntohl(ptcp->th_ack));
     printf("\t     WIN: %u\n", ntohs(ptcp->th_win));
-    printf("\t    HLEN: %u\n", ptcp->th_off*4);
+    printf("\t    HLEN: %u", ptcp->th_off*4);
+    if ((u_long)ptcp + ptcp->th_off*4 - 1 > (u_long)plast) {
+	/* not all there */
+	printf(" (only %ld bytes in dump file)",
+	       (u_long)plast - (u_long)ptcp + 1);
+    }
+    printf("\n");
+    
     if (ptcp->th_x2 != 0) {
 	printf("\t    MBZ: 0x%01x (these are supposed to be zero!)\n",
 	       ptcp->th_x2);
     }
+    printf("\t   CKSUM: 0x%04x", ntohs(ptcp->th_sum));
     pdata = (u_char *)ptcp + ptcp->th_off*4;
-    printf("\t    DLEN: %u",
-	   tcp_data_length);
-    if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
-	printf(" (only %ld bytes in dump file)\n",
-	       (u_long)plast - (u_long)pdata + 1);
+    if (verify_checksums) {
+	if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
+	    printf(" (too short to verify)");
+	else
+	    printf(" (%s)", tcp_cksum_valid(pip,ptcp,plast)?"CORRECT":"WRONG");
+    }
+    printf("\n");
+
+
+    printf("\t    DLEN: %u", tcp_data_length);
+    if ((tcp_data_length != 0) &&
+	((u_long)pdata + tcp_data_length > ((u_long)plast+1))) {
+	int available =  (u_long)plast - (u_long)pdata + 1;
+	if (available > 1)
+	    printf(" (only %ld bytes in dump file)",
+		   (u_long)plast - (u_long)pdata + 1);
+	else
+	    printf(" (none of it in dump file)");
+    }
     printf("\n");
     if (ptcp->th_off != 5) {
 	struct tcp_options *ptcpo;
 
-        printf("\t    OPTS: %u bytes\t",
+        printf("\t    OPTS: %u bytes",
 	       (ptcp->th_off*4) - sizeof(struct tcphdr));
+	if ((u_long)ptcp + ptcp->th_off*4 - 1 > (u_long)plast) {
+	    /* not all opts were stored */
+	    u_long available = 1 + (u_long)plast -
+		((u_long)ptcp + sizeof(struct tcphdr));
+	    if (available > 1)
+		printf(" (%lu bytes in file)", available);
+	    else
+		printf(" (none of it in dump file)");
+	}
+
+	printf("\t");
 
 	ptcpo = ParseOptions(ptcp,plast);
 
@@ -333,8 +467,14 @@ printtcp_packet(
 	}
         printf("\n");
     }
-    if (tcp_data_length > 0)
-	printf("\t    data: %u bytes\n", tcp_data_length);
+    if (tcp_data_length > 0) {
+	if (dump_packet_data) {
+	    char *ptcp_data = (char *)ptcp + (4 * ptcp->th_off);
+	    PrintRawData("   data", ptcp_data, plast, TRUE);
+	} else {
+	    printf("\t    data: %u bytes\n", tcp_data_length);
+	}
+    }
 }
 
 
@@ -370,6 +510,10 @@ printudp_packet(
     if ((u_long)pdata + ntohs(pudp->uh_ulen) > ((u_long)plast+1))
 	printf(" (only %ld bytes in dump file)\n",
 	       (u_long)plast - (u_long)pdata + 1);
+    if (ntohs(pudp->uh_ulen) > 0) {
+	if (dump_packet_data)
+	    PrintRawData("   data", pdata, plast, TRUE);
+    }
 }
 
 
@@ -452,7 +596,8 @@ void
 PrintRawData(
     char *label,
     void *pfirst,
-    void *plast)
+    void *plast,
+    Bool octal)			/* hex or octal? */
 {
     int lcount = 0;
     int count = (unsigned)plast - (unsigned)pfirst + 1;
@@ -462,27 +607,34 @@ PrintRawData(
 	return;
 
     printf("========================================\n");
-    printf("%s (%d bytes):\n\t", label, count);
+    printf("%s (%d bytes):\n", label, count);
 
     while (pch <= (u_char *) plast) {
 	if ((*pch == '\r') && (*(pch+1) == '\n')) {
-	    printf("\n\t");
+	    printf("\n");
 	    ++pch;
 	    lcount = 0;
 	} else if (isprint(*pch)) {
 	    putchar(*pch);
 	    lcount+=1;
 	} else {
-	    printf("\\%03o", *pch);
-	    lcount+=3;
+	    if (octal) {
+		printf("\\%03o", *pch);
+		lcount+=4;
+	    } else {
+		printf("0x%02x", *pch);
+		lcount+=4;
+	    }
 	}
-	if (lcount > 60) {
-	    printf("\n\t");
+	if (lcount > 70) {
+	    printf("\\\n");
 	    lcount = 0;
 	}
 	++pch;
     }
-    printf("\n");
+    if (lcount != 0)
+	printf("\\\n");
+    printf("========================================\n");
 }
 
 
@@ -492,26 +644,7 @@ PrintRawDataHex(
     void *pfirst,
     void *plast)
 {
-    int lcount = 0;
-    int count = (unsigned)plast - (unsigned)pfirst + 1;
-    u_char *pch = pfirst;
-
-    if (count <= 0)
-	return;
-
-    printf("========================================\n");
-    printf("%s (%d bytes):\n\t", label, count);
-
-    while (pch <= (u_char *) plast) {
-	printf("%02x ", *pch);
-
-	if (++lcount > 15) {
-	    printf("\n\t");
-	    lcount = 0;
-	}
-	++pch;
-    }
-    printf("\n");
+    PrintRawData(label,pfirst,plast,FALSE);
 }
 
 
@@ -520,8 +653,8 @@ printipv6(
     struct ipv6 *pipv6,
     void *plast)
 {
-    int ver = (pipv6->ip6_ver_tc_flabel & 0xF0000000) >> 28;
-    int tc = (pipv6->ip6_ver_tc_flabel & 0x0F000000) >> 24;
+    int ver = (ntohl(pipv6->ip6_ver_tc_flabel) & 0xF0000000) >> 28;
+    int tc  = (ntohl(pipv6->ip6_ver_tc_flabel) & 0x0F000000) >> 24;
     struct ipv6_ext *pheader;
     u_char nextheader;
 
@@ -529,8 +662,8 @@ printipv6(
     printf("\tIP  Srce: %s\n", ipv6addr2str(pipv6->ip6_saddr));
     printf("\tIP  Dest: %s\n", ipv6addr2str(pipv6->ip6_daddr));
     printf("\t   Class: %d\n", tc);
-    printf("\t    Flow: %d\n", (pipv6->ip6_ver_tc_flabel & 0x00FFFFFF));
-    printf("\t    PLEN: %d\n",pipv6->ip6_lngth);
+    printf("\t    Flow: %d\n", (ntohl(pipv6->ip6_ver_tc_flabel) & 0x00FFFFFF));
+    printf("\t    PLEN: %d\n", ntohs(pipv6->ip6_lngth));
     printf("\t    NXTH: %u (%s)\n",
 	   pipv6->ip6_nheader,
 	   ipv6_header_name(pipv6->ip6_nheader));
@@ -564,7 +697,24 @@ ipv6addr2str(
     struct in6_addr addr)
 {
     static char adr[INET6_ADDRSTRLEN];
-    inet_ntop(AF_INET6, (char *)&addr, (char *)adr, INET6_ADDRSTRLEN);
+    my_inet_ntop(AF_INET6, (char *)&addr, (char *)adr, INET6_ADDRSTRLEN);
     sprintf(adr,"%s", adr);
     return(adr);
+}
+
+
+/* Shawn's version... */
+/* Lots of machines HAVE this, but they give slightly different formats */
+/* and it messes up my cross-platform testing.  I'll just do it the */
+/* "one true" way!  :-)  */
+char *
+ether_ntoa (struct ether_addr *e)
+{
+    unsigned char *pe;
+    static char buf[30];
+
+    pe = (unsigned char *) e;
+    sprintf(buf,"%02x:%02x:%02x:%02x:%02x:%02x",
+	    pe[0], pe[1], pe[2], pe[3], pe[4], pe[5]);
+    return(buf);
 }

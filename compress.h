@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_compress[] =
-    "$Id: compress.h,v 1.5 1998/03/05 01:03:12 sdo Exp $";
+    "$Header: /home/sdo/src/tcptrace/src/RCS/compress.h,v 5.2 1999/02/25 15:01:37 sdo Exp $";
 
 #define COMP_HDR_SIZE (8*1024)	/* number of bytes from a compressed file that */
 				/* we save into a real file for header check, */

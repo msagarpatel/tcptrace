@@ -1,0 +1,1186 @@
+
+compress.c,527
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static int header_length 67,2944
+static Bool is_compressed 68,2975
+static FILE * f_orig_stdin 69,3010
+static int child_pid 70,3045
+static char *FindBinary(74,3075
+WhichFormat(136,4298
+CompReopenFile(188,5481
+CompSaveHeader(240,6794
+CompOpenPipe(347,9100
+CompOpenHeader(429,10764
+CompOpenFile(472,11723
+PipeHelper(504,12650
+PipeFitting(567,13996
+CompCloseFile(628,15192
+CompIsCompressed(650,15611
+CompFormats(657,15672
+FileIsStdin(683,16383
+
+dyncounter.c,703
+static int debug 10,195
+#define CARDINALITY 14,314
+struct node node18,362
+struct dyn_counter dyn_counter31,721
+AddToCounter(72,2141
+SetCounter(88,2416
+LookupCounter(104,2697
+NextCounter(130,3141
+GetMaxCount(196,4527
+GetMaxIx(205,4659
+GetMinIx(214,4775
+GetGran(223,4900
+GetTotalCounter(234,5068
+DestroyCounters(244,5198
+MakeCounterStruct(259,5408
+DestroyTree(270,5561
+FindLeaf(296,5922
+MakeDepth(394,8280
+NewNode(418,8701
+FindTwig(435,8917
+FindCounter(456,9307
+static void Indent(500,10166
+static void PrintTree(509,10265
+PrintTreeRecurse(517,10359
+FinishTree(553,11097
+FinishTreeRecurse(561,11216
+PrintLeafList(607,12251
+NextCounterRecurse(622,12537
+MakeCounter(655,13221
+
+etherpeek.c,999
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static struct EPFileHeader EPFileHeader52,1933
+} file_header;55,2075
+static struct EPFileHeader2 EPFileHeader257,2091
+} file_header2;64,2505
+struct EPFilePacket_v5_6 EPFilePacket_v5_668,2524
+struct EPFilePacket2_v5_6 EPFilePacket2_v5_673,2661
+struct EPFilePacket3_v5_6 EPFilePacket3_v5_678,2782
+typedef struct PeekPacket_v7 PeekPacket_v789,3194
+} PeekPacket_v7;PeekPacket_v797,3554
+static u_long mactime;104,3699
+#define Real_Size_FH 106,3723
+#define Real_Size_FH2 107,3746
+#define Real_Size_FP 108,3772
+#define Real_Size_FP2 109,3795
+#define Real_Size_FP3 110,3819
+#define Mac2unix 112,3846
+#define VERSION_7 114,3925
+#define VERSION_6 115,3964
+#define VERSION_5 116,4003
+static char thisfile_ep_version;117,4043
+#define EP_V5 118,4076
+#define EP_V6 119,4125
+#define EP_V7 120,4174
+static struct ether_header *pep;125,4259
+static int *pip_buf;126,4292
+pread_EP(131,4366
+pread_f *is_EP(334,9892
+
+filt_parser.c,2815
+#define YYBISON 6,79
+#define yyparse 8,129
+#define yylex 9,157
+#define yyerror 10,181
+#define yylval 11,209
+#define yychar 12,235
+#define yydebug 13,261
+#define yynerrs 14,289
+#define	EOS	15,317
+#define	LPAREN	16,333
+#define	RPAREN	17,352
+#define	GREATER	18,371
+#define	GREATER_EQ	19,391
+#define	LESS	20,414
+#define	LESS_EQ	21,431
+#define	EQUAL	22,451
+#define	NEQUAL	23,469
+#define	NOT	24,488
+#define	AND	25,504
+#define	OR	26,520
+#define	BAND	27,535
+#define	BOR	28,552
+#define	PLUS	29,568
+#define	MINUS	30,585
+#define	TIMES	31,603
+#define	DIVIDE	32,621
+#define	MOD	33,640
+#define	VARIABLE	34,656
+#define	STRING	35,677
+#define	SIGNED	36,696
+#define	UNSIGNED	37,715
+#define	BOOL	38,736
+#define	IPADDR	39,753
+#define YYDEBUG 78,2179
+} YYSTYPE;YYSTYPE91,2433
+#define const96,2501
+#define	YYFINAL	102,2532
+#define	YYFLAG	103,2552
+#define	YYNTBASE	104,2575
+#define YYTRANSLATE(YYTRANSLATE106,2596
+static const char yytranslate[108,2665
+static const short yyprhs[141,4731
+static const short yyrhs[147,4965
+static const short yyrline[161,5578
+static const char * const yytname[171,5864
+static const short yyr1[178,6195
+static const short yyr2[184,6427
+static const short yydefact[190,6659
+static const short yydefgoto[198,7016
+static const short yypact[202,7090
+static const short yypgoto[210,7445
+#define	YYLAST	215,7518
+static const short yytable[218,7539
+static const short yycheck[228,8079
+#define alloca 264,9794
+#define yyerrok	300,10919
+#define yyclearin	301,10954
+#define YYEMPTY	302,10991
+#define YYEOF	303,11011
+#define YYACCEPT	304,11028
+#define YYABORT 305,11055
+#define YYERROR	306,11082
+#define YYFAIL	311,11318
+#define YYRECOVERING(YYRECOVERING312,11348
+#define YYBACKUP(YYBACKUP313,11388
+#define YYTERROR	325,11722
+#define YYERRCODE	326,11741
+#define YYLEX	329,11779
+#define YYLEX	335,11863
+#define YYLEX	337,11921
+#define YYLEX	341,12015
+#define YYLEX	343,12064
+int	yychar;352,12207
+YYSTYPE	yylval;353,12250
+YYLTYPE yylloc;357,12353
+int yynerrs;361,12439
+int yydebug;365,12540
+#define YYINITDEPTH 373,12782
+#define YYMAXDEPTH 384,13011
+#define __yy_memcpy(__yy_memcpy393,13192
+__yy_memcpy 400,13443
+__yy_memcpy 418,13796
+#define YYPARSE_PARAM_ARG 441,14332
+#define YYPARSE_PARAM_DECL442,14378
+#define YYPARSE_PARAM_ARG 444,14433
+#define YYPARSE_PARAM_DECL 445,14473
+#define YYPARSE_PARAM_ARG448,14580
+#define YYPARSE_PARAM_DECL449,14606
+yyparse(453,14669
+#define YYPOPSTACK 474,15380
+#define YYPOPSTACK 476,15435
+  if 854,24457
+  *++yyvsp 864,24658
+  if 868,24710
+  yyn 888,25262
+  yystate 890,25282
+  if 891,25328
+  goto yyerrlab1;949,26647
+  if 952,26730
+  yyerrstatus 971,27172
+  goto yyerrhandle;973,27239
+  yyn 980,27446
+  if 981,27541
+  yyn 1006,27999
+  if 1007,28024
+  else if 1022,28300
+
+filt_scanner.c,5095
+#define yy_create_buffer 1,0
+#define yy_delete_buffer 2,46
+#define yy_scan_buffer 3,92
+#define yy_scan_string 4,134
+#define yy_scan_bytes 5,176
+#define yy_flex_debug 6,216
+#define yy_init_buffer 7,256
+#define yy_flush_buffer 8,298
+#define yy_load_buffer_state 9,342
+#define yy_switch_to_buffer 10,396
+#define yyin 11,448
+#define yyleng 12,470
+#define yylex 13,496
+#define yyout 14,520
+#define yyrestart 15,544
+#define yytext 16,576
+#define yywrap 17,602
+#define FLEX_SCANNER25,792
+#define YY_FLEX_MAJOR_VERSION 26,813
+#define YY_FLEX_MINOR_VERSION 27,845
+#define __cplusplus35,1000
+#define YY_USE_PROTOS46,1144
+#define YY_USE_CONST49,1218
+#define YY_USE_PROTOS55,1281
+#define YY_USE_CONST56,1303
+#define YY_USE_CONST66,1467
+#define YY_USE_PROTOS67,1488
+#define yyconst 71,1538
+#define yyconst73,1566
+#define YY_PROTO(YY_PROTO78,1612
+#define YY_PROTO(YY_PROTO80,1648
+#define YY_NULL 84,1716
+#define YY_SC_TO_UI(YY_SC_TO_UI91,1963
+#define BEGIN 97,2194
+#define YY_START 103,2391
+#define YYSTATE 104,2429
+#define YY_STATE_EOF(YY_STATE_EOF107,2512
+#define YY_NEW_FILE 110,2632
+#define YY_END_OF_BUFFER_CHAR 112,2671
+#define YY_BUF_SIZE 115,2740
+typedef struct yy_buffer_state *YY_BUFFER_STATE;YY_BUFFER_STATE117,2767
+extern int yyleng;119,2817
+extern FILE *yyin,120,2836
+extern FILE *yyin, *yyout;120,2836
+#define EOB_ACT_CONTINUE_SCAN 122,2864
+#define EOB_ACT_END_OF_FILE 123,2896
+#define EOB_ACT_LAST_MATCH 124,2926
+#define yyless(yyless142,3500
+#define unput(unput153,3755
+typedef unsigned int yy_size_t;yy_size_t159,3993
+struct yy_buffer_stateyy_buffer_state162,4027
+#define YY_BUFFER_NEW 204,5078
+#define YY_BUFFER_NORMAL 205,5102
+#define YY_BUFFER_EOF_PENDING 216,5600
+static YY_BUFFER_STATE yy_current_buffer 219,5637
+#define YY_CURRENT_BUFFER 225,5833
+static char yy_hold_char;229,5946
+static int yy_n_chars;231,5973
+int yyleng;234,6046
+static char *yy_c_buf_p 237,6104
+static int yy_init 238,6142
+static int yy_start 239,6203
+static int yy_did_buffer_switch_on_eof;244,6382
+#define YY_FLUSH_BUFFER 254,6827
+#define yy_new_buffer 264,7266
+#define yy_set_interactive(yy_set_interactive266,7306
+#define yy_set_bol(yy_set_bol273,7511
+#define YY_AT_BOL(YY_AT_BOL280,7684
+typedef unsigned char YY_CHAR;YY_CHAR282,7736
+FILE *yyin 283,7767
+typedef int yy_state_type;yy_state_type284,7813
+extern char *yytext;285,7840
+#define yytext_ptr 286,7861
+#define YY_DO_BEFORE_ACTION 296,8256
+#define YY_NUM_RULES 303,8410
+#define YY_END_OF_BUFFER 304,8434
+static yyconst short int yy_accept[305,8462
+static yyconst int yy_ec[316,8959
+static yyconst int yy_meta[348,10672
+static yyconst short int yy_base[356,10960
+static yyconst short int yy_def[368,11484
+static yyconst short int yy_nxt[380,12007
+static yyconst short int yy_chk[402,13117
+static yy_state_type yy_last_accepting_state;424,14227
+static char *yy_last_accepting_cpos;425,14273
+#define REJECT 430,14413
+#define yymore(yymore431,14457
+#define YY_MORE_ADJ 432,14503
+#define YY_RESTORE_YY_MORE_OFFSET433,14525
+char *yytext;434,14559
+#define INITIAL 436,14598
+#define yylval 471,16002
+#define YY_INPUT(YY_INPUT476,16110
+static int yy_start_stack_ptr 516,16926
+static int yy_start_stack_depth 517,16961
+static int *yy_start_stack 518,16998
+#define YY_NO_PUSH_STATE 530,17275
+#define YY_NO_POP_STATE 531,17302
+#define YY_NO_TOP_STATE 532,17328
+#define YY_READ_BUF_SIZE 552,17744
+#define ECHO 561,17963
+#define YY_INPUT(YY_INPUT568,18155
+#define yyterminate(yyterminate591,18925
+#define YY_START_STACK_INCR 596,19060
+#define YY_FATAL_ERROR(YY_FATAL_ERROR601,19150
+#define YY_DECL 608,19325
+#define YY_USER_ACTION615,19498
+#define YY_BREAK 620,19591
+#define YY_RULE_SETUP 623,19623
+    yylval.pipaddr 861,24008
+    yylval.unsigned_long 870,24162
+    yylval.signed_long 879,24315
+{ yylval.unsigned_long 886,24436
+{ yylval.unsigned_long 891,24544
+    yylval.string 898,24673
+    yylval.string[899,24744
+    yylval.string 908,24908
+ECHO;925,25300
+case YY_STATE_EOF(927,25316
+static int yy_get_next_buffer(1068,29039
+static yy_state_type yy_get_previous_state(1200,32161
+static yy_state_type yy_try_NUL_trans(1235,33064
+static void yyunput(1265,33866
+static int yyinput(1309,34925
+void yyrestart(1382,36443
+void yy_switch_to_buffer(1397,36732
+void yy_load_buffer_state(1427,37462
+YY_BUFFER_STATE yy_create_buffer(1440,37740
+void yy_delete_buffer(1471,38455
+void yy_init_buffer(1497,38894
+void yy_flush_buffer(1524,39324
+YY_BUFFER_STATE yy_scan_buffer(1555,39921
+YY_BUFFER_STATE yy_scan_string(1593,40806
+YY_BUFFER_STATE yy_scan_bytes(1610,41088
+static void yy_push_state(1649,41882
+static void yy_pop_state(1682,42559
+static int yy_top_state(1693,42758
+#define YY_EXIT_FAILURE 1700,42870
+static void yy_fatal_error(1704,42925
+#define yyless(yyless1719,43178
+static void yy_flex_strncpy(1736,43486
+static int yy_flex_strlen(1752,43758
+static void *yy_flex_alloc(1768,43959
+static void *yy_flex_realloc(1778,44129
+static void yy_flex_free(1796,44700
+int main(1806,44827
+int yywrap(1815,44901
+
+filter.c,1381
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static char *exprstr 60,2737
+static struct filter_node *filter_root 61,2766
+Op2Str(64,2820
+Vartype2BStr(91,3447
+Vartype2Str(122,4028
+MustBeType(159,5143
+MakeUnaryNode(186,5711
+MakeDisjunction(221,6392
+MakeConjunction(242,6834
+MakeOneBinaryNode(263,7278
+MakeBinaryNode(375,10202
+MakeVarNode(448,11830
+MakeStringConstNode(479,12788
+MakeBoolConstNode(493,13005
+MakeSignedConstNode(508,13216
+MakeUnsignedConstNode(524,13460
+MakeIPaddrConstNode(539,13710
+PrintConst(563,14322
+PrintVar(614,15516
+ParseFilter(649,16336
+Res2Str(673,16725
+PrintFilter(697,17402
+Filter2Str(705,17501
+PrintFilterInternal(713,17598
+LookupVar(772,18812
+Ptr2Signed(837,20289
+Ptr2Unsigned(861,20829
+Var2String(889,21456
+Var2Signed(911,21785
+Var2Ipaddr(942,22609
+Var2Unsigned(964,23004
+Const2Unsigned(996,23915
+Const2Signed(1013,24317
+Const2Ipaddr(1030,24714
+EvalMathopUnsigned(1046,25036
+EvalMathopSigned(1100,26367
+EvalRelopUnsigned(1155,27720
+EvalRelopSigned(1209,29031
+EvalRelopIpaddr(1261,30263
+EvalRelopString(1323,31734
+EvalVariable(1373,32889
+EvalConstant(1423,33820
+EvalFilter(1473,34738
+PassesFilter(1612,38266
+HelpFilterVariables(1632,38601
+HelpFilter(1652,39020
+InstallFilter(1702,41093
+filter_getc(1717,41337
+VFuncTput(1757,42189
+VFuncClntTput(1784,42690
+VFuncServTput(1791,42771
+
+gcache.c,1296
+static char const copyright[28,1296
+static char const rcsid[30,1421
+#define bzero(bzero45,1719
+#define bcopy(bcopy46,1766
+static int ca_enabled;50,1838
+enum cb_status cb_status54,1902
+enum cb_status { CB_INUSE=54,1902
+enum cb_status { CB_INUSE=1, CB_FREE=54,1902
+typedef enum cb_status cb_status;cb_status55,1943
+struct cacheblk cacheblk56,1977
+struct hashentry hashentry76,2747
+#define NULL_PHE	79,2783
+#define NULL_IX	80,2825
+enum ce_status ce_status84,2883
+enum ce_status {CE_INUSE=84,2883
+enum ce_status {CE_INUSE=11, CE_FREE=84,2883
+typedef enum ce_status ce_status;ce_status85,2925
+struct cacheentry cacheentry86,2959
+#define NULL_PCE	98,3483
+static struct cacheblk catab[102,3561
+#define ISBADCID(ISBADCID106,3627
+#define HASHTOIX(HASHTOIX108,3734
+static int docadebug 111,3814
+static int docaerror 112,3840
+#define CADEBUG 113,3866
+#define CAERROR 114,3905
+cainit(143,4849
+cacreate(165,5271
+cadestroy(239,7268
+cainsert(277,8079
+calookup(353,9911
+caremove(397,10797
+capurge(431,11468
+cadump(474,12335
+cahash(537,13772
+#define CAMEMSIZE(CAMEMSIZE553,13965
+cagetmem(560,14229
+cafreemem(581,14605
+cadeleteold(597,14885
+caclear(632,15670
+caisold(655,16210
+cagetindex(678,16647
+casetsize(730,17714
+cagetfree(763,18510
+caunlink(796,19325
+
+ipv6.c,432
+static char const copyright[27,1271
+static char const rcsid[29,1396
+ipv6_header_name(37,1604
+ipv6_nextheader(57,2252
+findheader(98,3126
+gettcp(237,6779
+getudp(252,7043
+int gethdrlength 267,7357
+int getpayloadlength 315,8307
+void IP_COPYADDR 331,8621
+int IP_SAMEADDR 347,8959
+inet_pton(370,9477
+const char *inet_ntop(403,10212
+IPV4ADDR2ADDR(429,10758
+IPV6ADDR2ADDR(443,11015
+str2ipaddr(458,11320
+int IPcmp(503,12331
+
+mfiles.c,510
+static char const copyright[28,1296
+static char const rcsid[30,1421
+struct mfile mfile48,1825
+MFILE mf_head;66,2200
+MFILE mf_tail;67,2242
+MFILE mfc_head;69,2284
+MFILE mfc_tail;70,2343
+Minit(74,2408
+Mfopen(91,2685
+Mfpipe(116,3136
+Mfileno(139,3423
+Mvfprintf(153,3651
+Mfprintf(169,3815
+Mftell(189,4031
+Mfseek(198,4114
+Mfwrite(209,4248
+Mfclose(221,4400
+Mfflush(237,4619
+Mfopen_internal(247,4713
+M_closeold(286,5325
+Mcheck(308,5834
+M_printlru(328,6193
+Mf_unlink(344,6500
+Mf_totail(353,6611
+
+missing.c,90
+static char const copyright[28,1296
+static char const rcsid[30,1421
+ether_ntoa 54,1970
+
+mod_collie.c,627
+static char const rcsid[28,1296
+struct conn_info conn_info42,1661
+static struct conn_info *connhead 46,1730
+struct uconn_info uconn_info50,1814
+static struct uconn_info *uconnhead 54,1885
+static char *collie_filename 58,1957
+static Bool print_labels 59,1994
+collie_init(75,2386
+MakeConnRec(114,3169
+MakeUDPConnRec(129,3398
+#define LABEL(LABEL143,3612
+#define DESCR(DESCR145,3653
+collie_done(186,5026
+collie_usage(248,6323
+collie_newconn(257,6499
+collie_newudpconn(271,6643
+static char *collie_dots(285,6857
+static char *collie_name(300,7110
+collie_date(320,7497
+collie_time(341,7849
+ParseArgs(352,7958
+
+mod_http.c,909
+static char const rcsid[28,1296
+#define DEFAULT_SERVER_PORT 38,1511
+struct get_info get_info41,1576
+struct time_stamp time_stamp55,1994
+static struct client_info client_info64,2167
+} *client_head 68,2268
+static struct http_info http_info72,2329
+} *httphead 103,3206
+static unsigned httpd_port;108,3284
+#define IS_CLIENT(IS_CLIENT136,4410
+#define IS_SERVER(IS_SERVER137,4467
+http_init(142,4604
+DataOffset(185,5515
+MakeGetRec(207,5928
+MakeHttpRec(228,6265
+AddGetTS(260,6913
+AddDataTS(270,7038
+AddAckTS(279,7165
+AddTS(291,7426
+FindClient(322,8124
+http_read(346,8516
+ts2d(424,10643
+MFMap(434,10766
+MFUnMap(472,11438
+HttpGather(498,11785
+PrintTSChain(515,12012
+WhenAcked(531,12416
+WhenSent(562,13120
+FindContent(592,13692
+FindGets(645,14966
+HttpDoPlot(692,16017
+HttpPrintone(808,19047
+http_done(901,21788
+http_usage(932,22289
+http_newfile(941,22427
+http_newconn(952,22551
+
+mod_rttgraph.c,505
+static char const rcsid[28,1296
+struct hist hist39,1549
+#define NUM_SLICES 47,1651
+struct hist3d hist3d48,1673
+struct samples samples54,1762
+struct rtt_tcb rtt_tcb63,1919
+static struct rttgraph_info rttgraph_info70,2020
+} *rttgraphhead 75,2149
+rttgraph_init(91,2579
+MakeBuckets(120,3175
+AddSample(153,3888
+MakeRttgraphRec(185,4679
+rttgraph_read(211,5293
+DoHist(260,6555
+PlotHist(376,9202
+PlotOne(404,9776
+rttgraph_done(423,10172
+rttgraph_usage(434,10317
+rttgraph_newconn(441,10416
+
+mod_tcplib.c,4591
+static char const rcsid[29,1343
+#define NUM_DIRECTION_TYPES 59,2173
+enum t_dtype t_dtype60,2203
+enum t_dtype {LOCAL 60,2203
+enum t_dtype {LOCAL = 0, INCOMING 60,2203
+enum t_dtype {LOCAL = 0, INCOMING = 1, OUTGOING 60,2203
+enum t_dtype {LOCAL = 0, INCOMING = 1, OUTGOING = 2, REMOTE 60,2203
+static char *dtype_names[61,2269
+struct insidenode insidenode64,2403
+} *inside_head 68,2484
+#define LOCAL_ONLY 69,2507
+typedef struct module_conninfo_tcb module_conninfo_tcb75,2684
+} module_conninfo_tcb;module_conninfo_tcb102,3346
+#define TCB_CACHE_A2B 106,3430
+#define TCB_CACHE_B2A 107,3454
+#define LOOP_OVER_BOTH_TCBS(LOOP_OVER_BOTH_TCBS108,3478
+typedef struct module_conninfo module_conninfo109,3556
+} module_conninfo;module_conninfo140,4332
+module_conninfo *module_conninfo_tail 141,4351
+typedef struct endpoint_pair endpoint_pair145,4444
+} endpoint_pair;endpoint_pair154,4691
+#define ENDPOINT_PAIR_HASHSIZE 155,4708
+struct burstdata burstdata159,4776
+struct parallelism parallelism166,5010
+static struct tcplibstats tcplibstats177,5350
+} *global_pstats[224,6635
+static int ldebug 228,6712
+static Bool window_hack 231,6776
+static int window_hack_excluded 232,6809
+static int window_hack_included 233,6846
+static int ipport_offset 236,6911
+static char *output_dir 239,6998
+static char *current_file 242,7099
+static const char breakdown_hash_char[245,7187
+endpoint_pair *ftp_endpoints[249,7295
+endpoint_pair *http_endpoints[252,7382
+typedef Bool (*f_testinside)f_testinside256,7460
+static u_long newconn_counter;260,7589
+static u_long newconn_badport;261,7638
+static u_long newconn_goodport;262,7696
+static u_long newconn_ftp_data_heuristic;263,7751
+static u_long newconn_http_parallel;264,7829
+static u_long conntype_counter[266,7937
+static u_long conntype_duplex_counter[268,8017
+static u_long conntype_uni_counter[270,8117
+static u_long conntype_nodata_counter[272,8221
+static u_long conntype_noplex_counter[274,8326
+#define is_ftp_ctrl_conn(is_ftp_ctrl_conn306,9495
+#define is_ftp_data_conn(is_ftp_data_conn307,9560
+#define is_http_conn(is_http_conn308,9625
+#define is_nntp_conn(is_nntp_conn309,9683
+#define is_smtp_conn(is_smtp_conn310,9741
+#define is_telnet_conn(is_telnet_conn311,9799
+int tcplib_init(411,13914
+DefineInsideRange(462,15110
+DefineInsideRecurse(509,15967
+DefineInside(533,16356
+IsInside(557,16820
+TestOutgoing(583,17366
+TestIncoming(596,17703
+TestLocal(610,18041
+TestRemote(620,18220
+static int InsideBytes(629,18390
+ParseArgs(647,18777
+tcplib_save_bursts(749,21153
+RunAllFour(920,25956
+void tcplib_done(942,26461
+void tcplib_read(1065,29769
+ModuleConnFillcache(1257,35323
+NewModuleConn(1336,37563
+#define CACHE_SIZE 1338,37581
+tcplib_newconn(1378,38502
+void tcplib_newfile(1477,41345
+void tcplib_usage(1525,42413
+static void tcplib_init_setup(1565,43536
+static void setup_breakdown(1609,44546
+static void update_breakdown(1645,45468
+namedfile(1718,47990
+static void do_final_breakdown(1763,49167
+static void do_all_final_breakdowns(1922,54055
+static int breakdown_type(1964,55378
+static void do_tcplib_next_converse(2026,56902
+FindPrevConnection(2088,58707
+do_tcplib_final_converse(2139,59841
+do_tcplib_conv_duration(2161,60383
+static void do_tcplib_next_duration(2178,60770
+Bool is_telnet_port(2234,62227
+void tcplib_do_telnet_duration(2278,63197
+void do_all_conv_arrivals(2336,64798
+void tcplib_add_telnet_interarrival(2386,65965
+void tcplib_do_telnet_interarrival(2454,68248
+void tcplib_do_telnet_packetsize(2507,69805
+void tcplib_add_telnet_packetsize(2567,71642
+Bool is_ftp_ctrl_port(2598,72293
+Bool is_ftp_data_port(2604,72406
+void tcplib_do_ftp_itemsize(2628,73015
+void tcplib_do_ftp_numitems(2639,73308
+static void tcplib_do_ftp_control_size(2680,74542
+is_smtp_port(2696,74906
+static void tcplib_do_smtp_itemsize(2704,75005
+is_nntp_port(2720,75363
+is_http_port(2734,75522
+StoreCounters(2752,75853
+ReadOldFile(2820,77226
+tcplib_do_GENERIC_itemsize(2874,78626
+tcplib_cleanup_bursts(2918,79886
+tcplib_do_GENERIC_burstsize(2964,80916
+tcplib_do_GENERIC_P_maxconns(2976,81214
+tcplib_do_GENERIC_nitems(2987,81511
+tcplib_do_GENERIC_idletime(2999,81840
+traffic_type(3011,82148
+FormatBrief(3032,82511
+FormatAddrBrief(3053,82934
+FindEndpointPair(3070,83320
+AddEndpointPair(3100,84003
+IsParallelHttp(3147,85276
+TrackEndpoints(3252,88159
+CouldBeFtpData(3309,89622
+MostRecentFtpControl(3340,90408
+IPHash(3381,91448
+EndpointHash(3404,91859
+SameEndpoints(3419,92063
+IsNewBurst(3442,92589
+ActiveConn(3476,93272
+RecentlyActiveConn(3493,93570
+
+mod_traffic.c,3517
+static char const rcsid[28,1296
+struct traffic_info traffic_info38,1537
+static struct traffic_info *traffichead 88,2516
+#define NUM_PORTS 89,2564
+static struct traffic_info **ports;90,2588
+#define EXCLUDE_PORT 91,2643
+#define INCLUDE_PORT 92,2679
+#define PORT_FILENAME 95,2761
+#define STATS_FILENAME 96,2804
+struct conn_info conn_info99,2890
+static struct conn_info *connhead 113,3587
+static PLOTTER plotter_bytes;118,3670
+static PLOTTER plotter_packets;119,3700
+static PLOTTER plotter_active;120,3732
+static PLOTTER plotter_idle;121,3763
+static PLOTTER plotter_open;122,3792
+static PLOTTER plotter_openclose;123,3821
+static PLOTTER plotter_i_open;124,3855
+static PLOTTER plotter_loss;125,3886
+static PLOTTER plotter_long;126,3915
+static PLOTTER plotter_rtt;127,3944
+static PLOTTER plotter_halfopen;128,3972
+static PLOTTER plotter_pureacks;129,4005
+static PLOTTER plotter_data;130,4038
+#define  PLOTTER_BYTES_FILENAME	132,4068
+#define  PLOTTER_PACKETS_FILENAME	133,4121
+#define  PLOTTER_ACTIVE_FILENAME	134,4177
+#define  PLOTTER_OPEN_FILENAME	135,4231
+#define  PLOTTER_OPENCLOSE_FILENAME	136,4282
+#define  PLOTTER_I_OPEN_FILENAME	137,4342
+#define  PLOTTER_LOSS_FILENAME	138,4396
+#define  PLOTTER_LONG_FILENAME	139,4447
+#define  PLOTTER_RTT_FILENAME	140,4498
+#define  PLOTTER_HALFOPEN_FILENAME	141,4547
+#define  PLOTTER_PUREACKS_FILENAME	142,4605
+#define  PLOTTER_IDLE_FILENAME	143,4663
+#define  PLOTTER_DATA_FILENAME	144,4714
+static float age_interval 147,4787
+static Bool doplot_bytes 148,4850
+static Bool doplot_packets 149,4884
+static Bool doplot_active 150,4920
+static Bool doplot_open 151,4955
+static Bool doplot_openclose 152,4988
+static Bool doplot_i_open 153,5026
+static Bool doplot_loss 154,5061
+static Bool doplot_long 155,5094
+static Bool doplot_rtt 156,5127
+static Bool doplot_halfopen 157,5159
+static Bool doplot_pureacks 158,5196
+static Bool doplot_idle 159,5233
+static Bool doplot_data 160,5266
+static int longconn_duration 161,5299
+static PLINE line_num_closes;179,5932
+static PLINE line_num_opens;180,5962
+static PLINE line_open_conns;181,5991
+static PLINE line_num_halfopens;182,6021
+static int num_closes 183,6054
+static int num_opens 184,6081
+static int ttl_num_opens 185,6107
+static int ttl_num_closes 186,6137
+static int open_conns 187,6168
+static int num_halfopens 188,6195
+static PLINE line_data_nonrexmit;191,6261
+static PLINE line_data_all;192,6295
+static u_llong data_nbytes_nonrexmit;193,6323
+static u_llong data_nbytes_all;194,6361
+static PLINE line_dupacks;197,6431
+static PLINE line_rexmits;198,6458
+static u_long dupacks;199,6485
+static u_long ttl_dupacks;200,6508
+static u_long rexmits;201,6535
+static u_long ttl_rexmits;202,6558
+static PLINE line_rtt_avg;205,6615
+static PLINE line_rtt_min;206,6642
+static PLINE line_rtt_max;207,6669
+static float rtt_ttl;208,6696
+static float ttl_rtt_ttl;209,6734
+static int rtt_min 210,6775
+static int rtt_max 211,6815
+static int rtt_samples;212,6855
+static int ttl_rtt_samples;213,6879
+static u_int rtt_minvalid 214,6907
+static u_int rtt_maxvalid 215,6973
+static int debug 219,7077
+CheckPortNum(223,7113
+ExcludePorts(235,7323
+IncludePorts(251,7618
+traffic_init(269,7983
+FindPort(436,12232
+MakeTrafficRec(465,12746
+MakeTrafficLines(490,13150
+MakeConnRec(525,14258
+traffic_read(540,14465
+PortName(723,18966
+AgeTraffic(737,19117
+traffic_done(947,24114
+traffic_newconn(1049,26854
+traffic_usage(1063,27070
+ParseArgs(1101,29067
+DoplotIOpen(1312,34836
+
+names.c,152
+static char const copyright[28,1296
+static char const rcsid[30,1421
+ServiceName(49,1718
+HostAddr(110,3073
+HostName(130,3386
+EndpointName(198,4770
+
+netm.c,500
+static char const copyright[28,1296
+static char const rcsid[30,1421
+#define NETM_DUMP_OFFSET 44,1647
+struct netm_header netm_header48,1711
+#define NETM_VERSION_OLD 52,1764
+#define NETM_VERSION_NEW 53,1791
+#define NETM_KEY 54,1818
+struct netm_packet_header_old netm_packet_header_old58,1876
+struct netm_packet_header netm_packet_header66,2015
+int netm_oldversion;80,2243
+static struct ether_header *pep;84,2299
+static int *pip_buf;85,2332
+pread_netm(90,2406
+pread_f *is_netm(182,4644
+
+nlanr.c,282
+static char const copyright[28,1296
+static char const rcsid[30,1421
+#define TSH_DUMP_OFFSET 76,3684
+struct tsh_packet_header tsh_packet_header77,3711
+struct tsh_frame tsh_frame88,3931
+static struct ether_header *pep;96,4116
+pread_nlanr(101,4237
+pread_f *is_nlanr(151,5333
+
+ns.c,237
+static char const rcsid[6,56
+static struct ether_header *pep;21,302
+static int *pip_buf;22,335
+static struct ip *ipb;23,356
+static struct tcphdr *tcpb;24,379
+static unsigned linenum;27,428
+pread_ns(32,541
+pread_f *is_ns(170,3566
+
+output.c,599
+static char const copyright[28,1296
+static char const rcsid[30,1421
+#define StatLineI(StatLineI58,2434
+#define StatLineI 63,2644
+SynCount(69,2711
+FinCount(82,2881
+ConnComplete(95,3049
+ConnReset(103,3146
+Average(112,3259
+Stdev(122,3370
+FormatBrief(151,3763
+PrintTrace(169,4033
+PrintBrief(408,13192
+UDPPrintTrace(495,15303
+StatLineP(549,16954
+StatLineI_L(563,17212
+StatLineI_LL(578,17516
+StatLineFieldL(590,17753
+StatLineF(612,18125
+StatLineField(627,18350
+StatLineFieldF(649,18693
+StatLineOne(678,19206
+elapsed2str(694,19450
+UDPPrintBrief(713,19845
+UDPFormatBrief(753,20730
+
+plotter.c,1116
+static char const copyright[28,1296
+static char const rcsid[30,1421
+struct plotter_info plotter_info37,1613
+static int max_plotters;47,1920
+static PLOTTER plotter_ix 48,1945
+static char *temp_color 49,1985
+static struct plotter_info *pplotters;50,2017
+xp_timestamp(68,2413
+plot_init(118,3648
+plotter_makemore(127,3820
+#define MAX_HOSTLETTER_LEN 149,4369
+HostLetter(151,4405
+NextHostLetter(176,4901
+TSGPlotName(185,5002
+DoPlot(201,5231
+new_plotter(246,5826
+plotter_done(307,7291
+plotter_temp_color(338,7850
+plotter_perm_color(348,7954
+plotter_line(358,8061
+plotter_dline(372,8273
+plotter_diamond(386,8501
+plotter_dot(396,8637
+plotter_plus(406,8765
+plotter_box(416,8895
+plotter_arrow(427,9024
+plotter_uarrow(438,9177
+plotter_darrow(448,9288
+plotter_rarrow(458,9399
+plotter_larrow(468,9510
+plotter_tick(478,9621
+plotter_dtick(489,9773
+plotter_utick(499,9882
+plotter_ltick(509,9991
+plotter_rtick(519,10100
+plotter_htick(529,10209
+plotter_vtick(539,10318
+plotter_nothing(551,10489
+plotter_text(564,10684
+struct pl_line pl_line583,11279
+new_line(594,11420
+extend_line(611,11653
+
+print.c,437
+static char const copyright[28,1296
+static char const rcsid[30,1421
+ts2ascii(59,2292
+ts2ascii_date(86,2850
+printeth_packet(110,3284
+printip_packet(128,3825
+printipv4(163,4550
+printipv4_opt_addrs(299,8131
+printtcp_packet(321,8526
+printudp_packet(482,13006
+printpacket(521,14018
+ParenServiceName(563,14893
+ParenHostName(579,15128
+PrintRawData(595,15354
+PrintRawDataHex(641,16204
+printipv6(651,16335
+ipv6addr2str(695,17668
+
+rexmit.c,365
+static char const copyright[28,1296
+static char const rcsid[30,1421
+int rexmit(80,2905
+addseg(122,3887
+create_seg(215,6626
+create_quadrant(232,6956
+whichquad(244,7166
+collapse_quad(302,8766
+insert_seg_between(360,10253
+rtt_ackin(387,10813
+rtt_retrans(456,12480
+ack_in(484,13082
+freequad(568,15130
+dump_rtt_sample(589,15462
+graph_rtt_sample(628,16289
+
+snoop.c,461
+static char const copyright[28,1296
+static char const rcsid[30,1421
+struct snoop_file_header snoop_file_header46,1747
+#define	SNOOP_DL_ETHER	54,2047
+#define	SNOOP_DL_FDDI	55,2093
+struct snoop_packet_header snoop_packet_header57,2160
+static struct ether_header *pep;69,2369
+static int *pip_buf;70,2402
+static int snoop_mac_type;71,2423
+static int find_ip_fddi(75,2566
+#define FDDIPATTERNLEN 79,2720
+pread_snoop(101,3153
+pread_f *is_snoop(236,6579
+
+tcpdump.c,419
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static pcap_t *pcap;48,1817
+static struct ether_header eth_header;52,1868
+#define EH_SIZE 53,1907
+static int *ip_buf;54,1951
+static struct pcap_pkthdr *callback_phdr;55,2005
+static void *callback_plast;56,2047
+static int callback(59,2078
+pread_tcpdump(119,3458
+pread_f *is_tcpdump(168,4595
+PcapSavePacket(241,6425
+PcapSavePacket(301,8042
+
+tcptrace.c,2562
+static char const copyright[28,1296
+static char const rcsid[30,1421
+char *tcptrace_version 41,1668
+Bool colorplot 73,2824
+Bool dump_rtt 74,2847
+Bool graph_rtt 75,2870
+Bool graph_tput 76,2894
+Bool graph_tsg 77,2919
+Bool graph_segsize 78,2943
+Bool graph_cwin 79,2971
+Bool hex 80,2996
+Bool ignore_non_comp 81,3013
+Bool dump_packet_data 82,3043
+Bool print_rtt 83,3074
+Bool print_cwin 84,3098
+Bool printbrief 85,3123
+Bool printsuppress 86,3147
+Bool printem 87,3175
+Bool printallofem 88,3197
+Bool printticks 89,3224
+Bool warn_ooo 90,3249
+Bool warn_printtrunc 91,3272
+Bool warn_printbadmbz 92,3302
+Bool warn_printhwdups 93,3333
+Bool warn_printbadcsum 94,3364
+Bool warn_printbad_syn_fin_seq 95,3396
+Bool save_tcp_data 96,3436
+Bool graph_time_zero 97,3464
+Bool graph_seq_zero 98,3494
+Bool graph_zero_len_pkts 99,3523
+Bool plot_tput_instant 100,3556
+Bool filter_output 101,3587
+Bool show_title 102,3615
+Bool do_udp 103,3639
+Bool resolve_ipaddresses 104,3660
+Bool resolve_ports 105,3693
+Bool verify_checksums 106,3720
+Bool triple_dupack_allows_data 107,3751
+int debug 108,3791
+u_long beginpnum 109,3806
+u_long endpnum 110,3828
+u_long pnum 111,3848
+u_long ctrunc 112,3865
+u_long bad_ip_checksums 113,3884
+u_long bad_tcp_checksums 114,3913
+u_long bad_udp_checksums 115,3943
+struct timeval current_time;118,3988
+int num_modules 119,4017
+char *ColorNames[120,4038
+static u_long filesize 125,4174
+char **filenames 126,4202
+int num_files 127,4227
+u_int numfiles;128,4246
+char *cur_filename;129,4262
+static char *progname;130,4282
+char *output_filename 131,4305
+struct timeval wallclock_start;134,4370
+struct timeval wallclock_finished;135,4402
+timeval first_packet 139,4477
+timeval last_packet 140,4507
+static struct ext_bool_op ext_bool_op144,4569
+} extended_bools[149,4687
+#define NUM_EXTENDED_BOOLS 190,6644
+Help(195,6740
+BadArg(232,7727
+Usage(254,8040
+ExplainOutput(266,8186
+Hints(381,15312
+Args(413,16974
+Version(500,20708
+Formats(509,20907
+ListModules(522,21148
+UsageModules(539,21499
+main(555,21755
+ProcessFile(658,24097
+QuitSig(1020,33174
+MallocZ(1033,33439
+ReallocZ(1058,34039
+GrabOnly(1081,34415
+StringToArgv(1148,35910
+CheckArguments(1201,37028
+ParseExtendedArg(1344,40639
+ParseArgs(1429,42823
+DumpFlags(1664,49498
+LoadModules(1702,51237
+FinishModules(1733,51815
+ModulesPerConn(1754,52199
+ModulesPerUDPConn(1786,52875
+ModulesPerNonTCPUDP(1817,53565
+ModulesPerPacket(1840,54020
+ModulesPerUDPPacket(1865,54518
+ModulesPerFile(1890,55031
+MemCpy(1914,55709
+FileToBuf(1929,55981
+
+thruput.c,86
+static char const copyright[28,1296
+static char const rcsid[30,1421
+DoThru(38,1577
+
+trace.c,1885
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static int tcp_packet_count 38,1621
+static int search_count 39,1654
+static Bool *ignore_pairs 40,1683
+static Bool bottom_letters 41,1748
+static Bool more_conns_ignored 42,1811
+int num_tcp_pairs 47,1878
+tcp_pair **ttp 48,1939
+int max_tcp_pairs 49,2005
+u_long tcp_trace_count 50,2074
+typedef struct ptp_snap ptp_snap63,2802
+} ptp_snap;ptp_snap67,2926
+Bool show_zero_window 84,3409
+Bool show_rexmit 85,3439
+Bool show_out_order 86,3464
+Bool show_sacks 87,3492
+Bool show_rtt_dongles 88,3516
+Bool show_triple_dupack 89,3547
+Bool nonames 90,3579
+Bool use_short_names 91,3601
+int thru_interval 92,3631
+char *window_color	98,3787
+char *ack_color	99,3818
+char *sack_color	100,3846
+char *data_color	101,3875
+char *retrans_color	102,3903
+char *hw_dup_color	103,3932
+char *out_order_color	104,3961
+char *text_color	105,3993
+char *default_color	106,4023
+char *synfin_color	107,4054
+char *push_color	108,4085
+char *ecn_color	109,4149
+char *ackdongle_nosample_color	112,4211
+char *ackdongle_ambig_color	113,4252
+elapsed(119,4362
+tv_sub(148,4922
+tv_add(171,5506
+tv_same(185,5760
+tv_cmp(196,5958
+CopyAddr(222,6549
+WhichDir(263,7639
+SameConn(308,8935
+NewTTP(324,9294
+NewPTPH(480,14653
+#define HASH_TABLE_SIZE 534,16224
+#define HASH_TABLE_SIZE 536,16300
+FindTTP(539,16395
+dotrace(687,20852
+trace_done(1355,40740
+MoreTcpPairs(1470,43378
+trace_init(1505,44234
+IgnoreConn(1526,44638
+OnlyConn(1543,44846
+get_long_opt(1571,45328
+get_short_opt(1582,45514
+ParseOptions(1592,45637
+#define CHECK_O_LEN(CHECK_O_LEN1650,47173
+ExtractContents(1778,50691
+check_hw_dups(1902,54195
+ptp2ptcb(1940,55177
+SeqRep(1965,55712
+cksum(1982,56090
+ip_cksum(2012,56658
+ip_cksum_valid(2037,57130
+tcp_cksum(2052,57378
+udp_cksum(2125,59098
+tcp_cksum_valid(2191,60560
+udp_cksum_valid(2202,60727
+
+udp.c,481
+static char const copyright[28,1296
+static char const rcsid[30,1421
+static int packet_count 38,1618
+static int search_count 39,1647
+static Bool *ignore_pairs 40,1676
+static Bool more_conns_ignored 41,1741
+int num_udp_pairs 46,1808
+udp_pair **utp 47,1869
+int max_udp_pairs 48,1935
+u_long udp_trace_count 49,2004
+NewUTP(61,2248
+#define HASH_TABLE_SIZE 110,3664
+FindUTP(112,3734
+udpdotrace(166,4949
+udptrace_done(256,6950
+MoreUdpPairs(311,8229
+udptrace_init(346,9085
+
+version.c,122
+static char const rcsid_version[28,1296
+char *built_bywhom 34,1508
+char *built_when 35,1541
+char *built_where 36,1572
+
+versnum.c,55
+static char const rcsid_versnum[28,1296
+main(35,1475

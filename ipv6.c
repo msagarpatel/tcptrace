@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,6 +24,10 @@
  * 		Ohio University
  * 		Athens, OH
  */
+static char const copyright[] =
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+static char const rcsid[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/ipv6.c,v 5.10 1999/09/08 02:43:07 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -34,11 +38,11 @@ ipv6_header_name(
     u_char nextheader)
 {
     switch (nextheader) {
-      case IPV6HDR_DSTOPTS: return("Destinations options");
-      case IPV6HDR_FRAGMENT: return("Fragment header");
-      case IPV6HDR_HOPBYHOP: return("Hop by hop");
-      case IPV6HDR_NONXTHDR: return("No next header");
-      case IPV6HDR_ROUTING: return("Routing header");
+      case IPPROTO_DSTOPTS: return("Destinations options");
+      case IPPROTO_FRAGMENT: return("Fragment header");
+      case IPPROTO_HOPOPTS: return("Hop by hop");
+      case IPPROTO_NONE: return("No next header");
+      case IPPROTO_ROUTING: return("Routing header");
       case IPPROTO_ICMPV6: return("IPv6 ICMP");
       case IPPROTO_TCP: return("TCP");
       case IPPROTO_UDP: return("UDP");
@@ -59,16 +63,21 @@ ipv6_nextheader(
     switch (*pnextheader) {
 	/* nothing follows these... */
       case IPPROTO_TCP:
-      case IPV6HDR_NONXTHDR:
+      case IPPROTO_NONE:
       case IPPROTO_ICMPV6:
       case IPPROTO_UDP:
 	return(NULL);
 
 	/* somebody follows these */
-      case IPV6HDR_HOPBYHOP:
-      case IPV6HDR_ROUTING:
-      case IPV6HDR_DSTOPTS:
+      case IPPROTO_HOPOPTS:
+      case IPPROTO_ROUTING:
+      case IPPROTO_DSTOPTS:
 	*pnextheader = pheader->ip6ext_nheader;
+
+	/* sanity check, if length is 0, terminate */
+	if (pheader->ip6ext_len == 0)
+	    return(NULL);
+	
 	return((struct ipv6_ext *)
 	       ((char *)pheader + pheader->ip6ext_len));
 
@@ -172,11 +181,11 @@ findheader(
 	    return(NULL);	/* didn't find it */
 
 	    /* non-tcp protocols */
-	  case IPV6HDR_NONXTHDR:
+	  case IPPROTO_NONE:
 	  case IPPROTO_ICMPV6:
 
 	    /* fragmentation */
-	  case IPV6HDR_FRAGMENT:
+	  case IPPROTO_FRAGMENT:
 	  {
 	      struct ipv6_ext_frag *pfrag = (struct ipv6_ext_frag *)pheader;
 
@@ -197,9 +206,9 @@ findheader(
 	  }
 
 	  /* headers we just skip over */
-	  case IPV6HDR_HOPBYHOP:
-	  case IPV6HDR_ROUTING:
-	  case IPV6HDR_DSTOPTS:
+	  case IPPROTO_HOPOPTS:
+	  case IPPROTO_ROUTING:
+	  case IPPROTO_DSTOPTS:
 	      nextheader = pheader->ip6ext_nheader;
 	      pheader = (struct ipv6_ext *)
 		  ((char *)pheader + pheader->ip6ext_len);
@@ -271,20 +280,20 @@ int gethdrlength (struct ip *pip, void *plast)
 	pipv6 = (struct ipv6 *) pip;
 	while (1)
 	{
-	    if (nextheader == IPV6HDR_NONXTHDR)
+	    if (nextheader == IPPROTO_NONE)
 		return length;
 	    if (nextheader == IPPROTO_TCP)
 		return length;
 	    if (nextheader == IPPROTO_UDP)
 		return length;
-	    if (nextheader == IPV6HDR_FRAGMENT)
+	    if (nextheader == IPPROTO_FRAGMENT)
 	    {
 		nextheader = *pheader;
 		pheader += 8;
 		length += 8;
 	    }
-	    if ((nextheader == IPV6HDR_HOPBYHOP) || (nextheader == IPV6HDR_ROUTING)
-		|| (nextheader == IPV6HDR_DSTOPTS))
+	    if ((nextheader == IPPROTO_HOPOPTS) || (nextheader == IPPROTO_ROUTING)
+		|| (nextheader == IPPROTO_DSTOPTS))
 	    {
 		nextheader = *pheader;
 		pheader += *(pheader + 1);
@@ -356,32 +365,93 @@ int IP_SAMEADDR (ipaddr addr1, ipaddr addr2)
 
 
 
-#ifndef HAVE_INET_NTOP
+#ifndef HAVE_INET_PTON
+int
+inet_pton(int af, const char *src, void *dst)
+{
+    if (af == AF_INET) {
+	/* use standard function */
+	long answer = inet_addr(src);
+	if (answer != -1) {
+	    *((long *)dst) = answer;
+	    return(1);
+	}
+    } else if (af == AF_INET6) {
+	/* YUCC - lazy for now, not fully supported */
+	int shorts[8];
+	if (sscanf(src,"%x:%x:%x:%x:%x:%x:%x:%x",
+		   &shorts[0], &shorts[1], &shorts[2], &shorts[3],
+		   &shorts[4], &shorts[5], &shorts[6], &shorts[7]) == 8) {
+	    int i;
+	    for (i=0; i < 8; ++i)
+		((u_short *)dst)[i] = (u_short)shorts[i];
+	    return(1);
+	}
+    }
+
+    /* else, it failed */
+    return(0);
+}
+#endif /* HAVE_INET_PTON */
+
+
+
 /*
- * inet_ntop: makes a string address of the 16 byte ipv6 address
+ * my_inet_ntop: makes a string address of the 16 byte ipv6 address
+ * We use our own because various machines print them differently
+ * and I wanted them to all be the same
  */
-const char *inet_ntop(int af, const char *src, char *dst, size_t size)
+char *
+my_inet_ntop(int af, const char *src, char *dst, size_t size)
 {
     int i;
-    u_short s;
-    char *temp;
+    u_short *src_shorts = (u_short *)src;
+    char *ret = dst;
+    Bool did_shorthand = FALSE;
+    Bool doing_shorthand = FALSE;
 
-    temp = dst;
-    for (i = 0; i < 16; i++)
-    {
-	s = (u_short)  src[i];
-	sprintf(dst, "%02x",(s & 0x00ff));  /* make the hi order byte 0 */
-	s = (u_short) src[++i];
-	dst += 2;
-	sprintf(dst, "%02x", (s & 0x00ff));
-	dst += 3;
-	*(dst - 1) = ':';
+    /* sanity check, this isn't general, but doesn't need to be */
+    if (size != INET6_ADDRSTRLEN) {
+	fprintf(stderr,"my_inet_ntop: invalid size argument\n");
+	exit(-1);
     }
+
+
+    /* address is 128 bits == 16 bytes == 8 shorts */
+    for (i = 0; i < 8; i++) {
+	u_short twobytes = ntohs(src_shorts[i]);
+
+	/* handle shorthand notation */
+	if (twobytes == 0) {
+	    if (doing_shorthand) {
+		/* just eat it and continue (except last 2 bytes) */
+		if (i != 7)
+		    continue;
+	    } else if (!did_shorthand) {
+		/* start shorthand */
+		doing_shorthand = TRUE;
+		continue;
+	    }
+	}
+
+	/* terminate shorthand (on non-zero or last 2 bytes) */
+	if (doing_shorthand) {
+	    doing_shorthand = FALSE;
+	    did_shorthand = TRUE;
+	    sprintf(dst, ":");
+	    dst += 1;
+	}
+
+	sprintf(dst, "%04x:", twobytes);
+	dst += 5;
+    }
+
+    /* nuke the trailing ':' */
     *(dst-1) = '\0';
-    dst = temp;
-    return dst;
+
+    return(ret);
 }
-#endif /* HAVE_INET_NTOP */
+
 
 
 /* given an IPv4 IP address, return a pointer to a (static) ipaddr struct */
@@ -409,4 +479,86 @@ IPV6ADDR2ADDR(
     memcpy(&addr.un.ip6.s6_addr,&addr6->s6_addr, 16);
 
     return(&addr);
+}
+
+
+/* given an internet address (IPv4 dotted decimal or IPv6 hex colon),
+   return an "ipaddr" (allocated from heap) */
+ipaddr *
+str2ipaddr(
+    char *str)
+{
+    ipaddr *pipaddr;
+
+    /* allocate space */
+    pipaddr = MallocZ(sizeof(ipaddr));
+
+    /* N.B. - uses standard IPv6 facility inet_pton from RFC draft */
+    if (strchr(str,'.') != NULL) {
+	/* has dots, better be IPv4 */
+	pipaddr->addr_vers = 4;
+	if (inet_pton(AF_INET, str,
+		      &pipaddr->un.ip4.s_addr) != 1) {
+	    if (debug)
+		fprintf(stderr,"Address string '%s' unparsable as IPv4\n",
+			str);
+	    return(NULL);
+	}
+    } else if (strchr(str,':') != NULL) {
+	/* has colons, better be IPv6 */
+	pipaddr->addr_vers = 6;
+	if (inet_pton(AF_INET6, str, 
+		      &pipaddr->un.ip6.s6_addr) != 1) {
+	    if (debug)
+		fprintf(stderr,"Address string '%s' unparsable as IPv6\n",
+			str);
+	    return(NULL);
+	}
+    } else {
+	if (debug)
+	    fprintf(stderr,"Address string '%s' unparsable\n", str);
+	return(NULL);
+    }
+
+    return(pipaddr);
+}
+
+
+/* compare two IP addresses */
+/* result: */
+/*    -2: different address types */
+/*    -1: A < B */
+/*     0: A = B */
+/*     1: A > B */
+int IPcmp(
+    ipaddr *pipA,
+    ipaddr *pipB)
+{
+    int i;
+    int len = (pipA->addr_vers == 4)?4:6;
+    u_char *left = (char *)&pipA->un.ip4;
+    u_char *right = (char *)&pipB->un.ip4;
+
+    /* always returns -2 unless both same type */
+    if (pipA->addr_vers != pipB->addr_vers) {
+	if (debug>1) {
+	    printf("IPcmp %s", HostAddr(*pipA));
+	    printf("%s fails, different addr types\n",
+		   HostAddr(*pipB));
+	}
+	return(-2);
+    }
+
+
+    for (i=0; i < len; ++i) {
+	if (left[i] < right[i]) {
+	    return(-1);
+	} else if (left[i] > right[i]) {
+	    return(1);
+	}
+	/* else ==, keep going */
+    }
+
+    /* if we got here, they're the same */
+    return(0);
 }

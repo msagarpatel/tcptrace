@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/rexmit.c,v 3.14 1998/11/04 16:08:18 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/rexmit.c,v 5.4 1999/03/16 21:43:06 sdo Exp $";
 
 
 /* 
@@ -483,7 +483,8 @@ rtt_retrans(
 enum t_ack
 ack_in(
     tcb *ptcb,
-    seqnum ack)
+    seqnum ack,
+    unsigned tcp_data_length)
 {
     quadrant *pquad;
     quadrant *pquad_prev;
@@ -530,8 +531,12 @@ ack_in(
 		++ptcb->rtt_dupack; /* one more duplicate ack */
 		ret = CUMUL;
 		if (pseg->acked == 4) {
-		    ++ptcb->rtt_triple_dupack;
-		    ret = TRIPLE;
+		    /* some people say these CAN'T have data */
+		    if ((tcp_data_length == 0) ||
+			triple_dupack_allows_data) {
+			++ptcb->rtt_triple_dupack;
+			ret = TRIPLE;
+		    }
 		}
 	    }
 	    continue;
@@ -628,32 +633,32 @@ graph_rtt_sample(
     char title[210];
 
     /* if the FILE is NULL, open file */
-    if (ptcb->rtt_plotter == (PLOTTER) NULL) {
-	sprintf(title,"%s_==>_%s (rtt samples)",
-		ptcb->ptp->a_endpoint, ptcb->ptp->b_endpoint);
+    if (ptcb->rtt_plotter == NO_PLOTTER) {
+	char *name_from, *name_to;
+	if (ptcb==&ptcb->ptp->a2b) {
+	    name_from = ptcb->ptp->a_endpoint;
+	    name_to   = ptcb->ptp->b_endpoint;
+	} else {
+	    name_from = ptcb->ptp->b_endpoint;
+	    name_to   = ptcb->ptp->a_endpoint;
+	}
+	sprintf(title,"%s_==>_%s (rtt samples)", name_from, name_to);
 	ptcb->rtt_plotter = new_plotter(ptcb,NULL,title,
 					"time","rtt (ms)",
 					RTT_GRAPH_FILE_EXTENSION);
 	plotter_perm_color(ptcb->rtt_plotter,"red");
+
+	if (graph_time_zero) {
+	    /* set graph zero points */
+	    plotter_nothing(ptcb->rtt_plotter, current_time);
+	}
+	ptcb->rtt_line =
+	    new_line(ptcb->rtt_plotter, "rtt", "red");
     }
 
     if (etime_rtt <= 1)
 	return;
 
-    if (ptcb->rtt_lastrtt == 0) {
-	/* prime the pump */
-	ptcb->rtt_lastrtt = etime_rtt;
-	ptcb->rtt_lasttime = current_time;
-
-	return;
-    }
-
-    plotter_line(ptcb->rtt_plotter,
-		 ptcb->rtt_lasttime, (int) (ptcb->rtt_lastrtt / 1000),
-		 current_time, (int) (etime_rtt / 1000));
-    plotter_temp_color(ptcb->rtt_plotter,"yellow");
-    plotter_dot(ptcb->rtt_plotter, current_time, (int) (etime_rtt / 1000));
-
-    ptcb->rtt_lastrtt = etime_rtt;
-    ptcb->rtt_lasttime = current_time;
+    extend_line(ptcb->rtt_line,
+		current_time, (int) (etime_rtt / 1000));
 }

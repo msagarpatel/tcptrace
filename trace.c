@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.56 1998/11/18 16:41:25 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 5.20 1999/09/07 22:29:15 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -85,6 +85,8 @@ Bool show_zero_window = TRUE;
 Bool show_rexmit = TRUE;
 Bool show_out_order = TRUE;
 Bool show_sacks = TRUE;
+Bool show_rtt_dongles = FALSE;
+Bool show_triple_dupack = TRUE;
 Bool nonames = FALSE;
 Bool use_short_names = FALSE;
 int thru_interval = 10;	/* in segments */
@@ -104,6 +106,7 @@ char *text_color	= "magenta";
 char *default_color	= "white";
 char *synfin_color	= "orange";
 char *push_color	= "white";	/* top arrow for PUSHed segments */
+char *ecn_color		= "yellow";
 
 /* ack diamond dongle colors */
 char *ackdongle_nosample_color	= "blue";
@@ -119,12 +122,22 @@ elapsed(
 {
     struct timeval etime;
 
-    etime.tv_sec  = time2.tv_sec  - time1.tv_sec;
-    etime.tv_usec = time2.tv_usec - time1.tv_usec;
-    if (etime.tv_usec < 0) {
-	etime.tv_sec  -= 1;
-	etime.tv_usec += 1000000;
+    /*sanity check, some of the files have packets out of order */
+    if (tv_lt(time2,time1)) {
+	return(0.0);
     }
+
+    if (0) {
+	fprintf(stderr,"elapsed(%s,", ts2ascii(&time1));
+	fprintf(stderr,"%s) is ", ts2ascii(&time2));
+    }
+
+    etime = time2;
+    tv_sub(&etime, time1);
+
+    if (0)
+	fprintf(stderr,"\n\t%s \n", ts2ascii(&etime));
+
     return((double)etime.tv_sec * 1000000 + (double)etime.tv_usec);
 }
 
@@ -138,10 +151,12 @@ tv_sub(struct timeval *plhs, struct timeval rhs)
     if (tv_lt(*plhs,rhs)) {
 	fprintf(stderr,"tvsub(%s,", ts2ascii(plhs));
 	fprintf(stderr,"%s) bad timestamp order!\n", ts2ascii(&rhs));
-	exit(-1);
+/* 	exit(-1); */
+	plhs->tv_sec = plhs->tv_usec = 0;
+	return;
     }
     
-    if (plhs->tv_usec > rhs.tv_usec) {
+    if (plhs->tv_usec >= rhs.tv_usec) {
 	plhs->tv_usec -= rhs.tv_usec;
     } else if (plhs->tv_usec < rhs.tv_usec) {
 	plhs->tv_usec += US_PER_SEC - rhs.tv_usec;
@@ -162,6 +177,15 @@ tv_add(struct timeval *plhs, struct timeval rhs)
 	plhs->tv_usec -= US_PER_SEC;
 	plhs->tv_sec += 1;
     }
+}
+
+
+/* are the 2 times the same? */
+Bool
+tv_same(struct timeval lhs, struct timeval rhs)
+{
+    return((lhs.tv_sec  == rhs.tv_sec) &&
+	   (lhs.tv_usec == rhs.tv_usec));
 }
 
 
@@ -343,7 +367,7 @@ NewTTP(
 			    ptp->addr_pair.b_port));
 
     /* init time sequence graphs */
-    ptp->a2b.tsg_plotter = ptp->b2a.tsg_plotter = -1;
+    ptp->a2b.tsg_plotter = ptp->b2a.tsg_plotter = NO_PLOTTER;
     if (graph_tsg && !ptp->ignore_pair) {
 	if (!ignore_non_comp || (SYN_SET(ptcp))) {
 	    sprintf(title,"%s_==>_%s (time sequence graph)",
@@ -360,27 +384,37 @@ NewTTP(
 			    graph_time_zero?"relative time":"time",
 			    graph_seq_zero?"sequence offset":"sequence number",
 			    PLOT_FILE_EXTENSION);
+	    if (graph_time_zero) {
+		/* set graph zero points */
+		plotter_nothing(ptp->a2b.tsg_plotter, current_time);
+		plotter_nothing(ptp->b2a.tsg_plotter, current_time);
+	    }
 	}
     }
 
     /* init cwin graphs */
-    ptp->a2b.cwin_plotter = ptp->b2a.cwin_plotter = -1;
+    ptp->a2b.cwin_plotter = ptp->b2a.cwin_plotter = NO_PLOTTER;
     if (graph_cwin && !ptp->ignore_pair) {
 	if (!ignore_non_comp || (SYN_SET(ptcp))) {
-	    sprintf(title,"%s_==>_%s (time sequence graph)",
+	    sprintf(title,"%s_==>_%s (outstanding data)",
 		    ptp->a_endpoint, ptp->b_endpoint);
 	    ptp->a2b.cwin_plotter =
 		new_plotter(&ptp->a2b,NULL,title,
 			    graph_time_zero?"relative time":"time",
 			    "Outstanding Data (bytes)",
 			    CWIN_FILE_EXTENSION);
-	    sprintf(title,"%s_==>_%s (time sequence graph)",
+	    sprintf(title,"%s_==>_%s (outstanding data)",
 		    ptp->b_endpoint, ptp->a_endpoint);
 	    ptp->b2a.cwin_plotter =
 		new_plotter(&ptp->b2a,NULL,title,
 			    graph_time_zero?"relative time":"time",
 			    "Outstanding Data (bytes)",
 			    CWIN_FILE_EXTENSION);
+	    if (graph_time_zero) {
+		/* set graph zero points */
+		plotter_nothing(ptp->a2b.cwin_plotter, current_time);
+		plotter_nothing(ptp->b2a.cwin_plotter, current_time);
+	    }
 	    ptp->a2b.cwin_line =
 		new_line(ptp->a2b.cwin_plotter, "cwin", "red");
 	    ptp->b2a.cwin_line =
@@ -393,7 +427,7 @@ NewTTP(
     }
 
     /* init segment size graphs */
-    ptp->a2b.segsize_plotter = ptp->b2a.segsize_plotter = -1;
+    ptp->a2b.segsize_plotter = ptp->b2a.segsize_plotter = NO_PLOTTER;
     if (graph_segsize && !ptp->ignore_pair) {
 	sprintf(title,"%s_==>_%s (segment size graph)",
 		ptp->a_endpoint, ptp->b_endpoint);
@@ -409,6 +443,11 @@ NewTTP(
 			graph_time_zero?"relative time":"time",
 			"segment size (bytes)",
 			SEGSIZE_FILE_EXTENSION);
+	if (graph_time_zero) {
+	    /* set graph zero points */
+	    plotter_nothing(ptp->a2b.segsize_plotter, current_time);
+	    plotter_nothing(ptp->b2a.segsize_plotter, current_time);
+	}
 	ptp->a2b.segsize_line =
 	    new_line(ptp->a2b.segsize_plotter, "segsize", "red");
 	ptp->b2a.segsize_line =
@@ -419,6 +458,8 @@ NewTTP(
 	    new_line(ptp->b2a.segsize_plotter, "avg segsize", "blue");
     }
 
+    /* init RTT graphs */
+    ptp->a2b.rtt_plotter = ptp->b2a.rtt_plotter = NO_PLOTTER;
 
     ptp->a2b.ss = (seqspace *)MallocZ(sizeof(seqspace));
     ptp->b2a.ss = (seqspace *)MallocZ(sizeof(seqspace));
@@ -444,12 +485,35 @@ NewPTPH(void)
 
     /* allocate several of them, all on the same page */
     if (ptp_freelist_length <= 0) {
-	const int cachesize = PAGESIZE/sizeof(struct ptp_snap);
-	const int numbytes = cachesize * sizeof(struct ptp_snap);
+	/* The machine's page size makes a nice cache size.  */
+	/* It's not the end of the world if this is wrong, so */
+	/* we won't worry about it TOO much */
+#if defined(PAGESIZE)
+	/* there's "supposed" to be a constant... */
+	int pagesize = PAGESIZE;
+#elif defined(_SC_PAGESIZE)
+	/* but maybe we can get it from the system... */
+	int pagesize = sysconf(_SC_PAGESIZE);
+#else
+	/* if all else fails, just guess 8k, close enough */
+	int pagesize = 8*1024;
+#endif
+	int cachesize = pagesize/sizeof(struct ptp_snap);
+	int numbytes = cachesize * sizeof(struct ptp_snap);
 	ptp_freelist_length = cachesize;
 
-	/* like malloc, but aligned on a page boundary */
-	ptph_freelist = memalign(numbytes, PAGESIZE);
+#ifdef HAVE_VALLOC
+	/* try to grab the memory, aligned on a page boundard */
+	ptph_freelist = valloc(numbytes);
+#else /*  HAVE_VALLOC */
+#ifdef HAVE_MEMALIGN
+	/* memalign will do this too */
+	ptph_freelist = memalign(numbytes, pagesize);
+#else /* HAVE_MEMALIGN */
+	/* newer version of malloc are supposed to do this anyway */
+	ptph_freelist = malloc(numbytes);
+#endif /* HAVE_MEMALIGN */
+#endif /* HAVE_VALLOC */
 
 	/* zero them all out */
 	memset(ptph_freelist, 0, numbytes);
@@ -500,6 +564,17 @@ FindTTP(
 	if (SameConn(&tp_in,&ptph->addr_pair,&dir)) {
 	    /* OK, this looks good, suck it into memory */
 	    tcp_pair *ptp = ptph->ptp;
+	    tcb *thisdir;
+	    tcb *otherdir;
+
+	    /* figure out which direction this packet is going */
+	    if (dir == A2B) {
+		thisdir  = &ptp->a2b;
+		otherdir = &ptp->b2a;
+	    } else {
+		thisdir  = &ptp->b2a;
+		otherdir = &ptp->a2b;
+	    }
 
 	    /* check for "inactive" */
 	    /* (this shouldn't happen anymore, they aren't on the list */
@@ -520,6 +595,8 @@ FindTTP(
 	    /*    SYN sequence number outside last window (rfc 1122) */
 	    /*      (or less than initial Sequence, */
 	    /*       for wrap around trouble)  - Tue Nov  3, 1998*/
+	    /*  OR */
+	    /* 3) this is a SYN, last had a SYN, seq numbers differ */
 	    /* if so, mark it INACTIVE and skip from now on */
 	    if (0 && SYN_SET(ptcp)) {
 		/* better keep this debugging around, it keeps breaking */
@@ -531,33 +608,31 @@ FindTTP(
 		printf("a2b.reset_count: %d\n", ptp->a2b.reset_count);
 		printf("b2a.reset_count: %d\n", ptp->b2a.reset_count);
 		printf("dir: %d (%s)\n", dir, dir==A2B?"A2B":"B2A");
-		printf("seq:    %lu \n", ptcp->th_seq);
-		printf("winend: %lu \n",
-		       dir == A2B?ptp->b2a.windowend:ptp->a2b.windowend);
-		printf("syn:    %lu \n",
-		       dir == A2B?ptp->b2a.syn:ptp->a2b.syn);
-		printf("SEQ_GREATERTHAN winend: %d\n", dir == A2B?
-		       SEQ_GREATERTHAN(ptcp->th_seq,ptp->b2a.windowend):
-		       SEQ_GREATERTHAN(ptcp->th_seq,ptp->a2b.windowend));
-		printf("SEQ_LESSTHAN init syn: %d\n", dir == A2B?
-		       SEQ_LESSTHAN(ptcp->th_seq,ptp->a2b.syn):
-		       SEQ_LESSTHAN(ptcp->th_seq,ptp->b2a.syn));
+		printf("seq:    %lu \n", (u_long)ntohl(ptcp->th_seq));
+		printf("winend: %lu \n", otherdir->windowend);
+		printf("syn:    %lu \n", otherdir->syn);
+		printf("SEQ_GREATERTHAN winend: %d\n", 
+		       SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend));
+		printf("SEQ_LESSTHAN init syn: %d\n", 
+		       SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn));
 	    } 
 
-	    if ((elapsed(ptp->last_time,current_time)/1000000 > (4*60)) ||
+	    if (/* rule 1 */
+		(elapsed(ptp->last_time,current_time)/1000000 > (4*60))
+		|| /* rule 2 */
 		((SYN_SET(ptcp)) && 
-		 (((ptp->a2b.fin_count >= 1) ||
-		   (ptp->b2a.fin_count >= 1)) ||
-		  ((ptp->a2b.reset_count >= 1) ||
-		   (ptp->b2a.reset_count >= 1))) &&
-		 (
-		     ((dir == A2B) && (
-			 SEQ_GREATERTHAN(ptcp->th_seq,ptp->b2a.windowend) ||
-			 SEQ_LESSTHAN(ptcp->th_seq,ptp->a2b.syn))) ||
-		     ((dir == B2A) && (
-			 SEQ_GREATERTHAN(ptcp->th_seq,ptp->a2b.windowend) ||
-			 SEQ_LESSTHAN(ptcp->th_seq,ptp->b2a.syn)))))) {
-		if (debug) {
+		 (((thisdir->fin_count >= 1) ||
+		   (otherdir->fin_count >= 1)) ||
+		  ((thisdir->reset_count >= 1) ||
+		   (otherdir->reset_count >= 1))) &&
+		 (SEQ_GREATERTHAN(ntohl(ptcp->th_seq),otherdir->windowend) ||
+		  SEQ_LESSTHAN(ntohl(ptcp->th_seq),thisdir->syn)))
+		|| /* rule 3 */
+		(SYN_SET(ptcp) &&
+		 (thisdir->syn_count > 1) &&
+		 (thisdir->syn != ntohl(ptcp->th_seq)))) {
+		
+		if (debug>1) {
 		    printf("%s: Marking 0x%08x %s<->%s INACTIVE (idle: %f sec)\n",
 			   ts2ascii(&current_time),
 			   (unsigned) ptp,
@@ -628,6 +703,9 @@ dotrace(
     int		dir;
     Bool	retrans;
     Bool	hw_dup = FALSE;	/* duplicate at the hardware level */
+    Bool	ecn_ce = FALSE;
+    Bool	ecn_echo = FALSE;
+    Bool	cwr = FALSE;
     int		retrans_num_bytes;
     Bool	out_order;	/* out of order */
     u_short	th_sport;	/* source port */
@@ -635,8 +713,10 @@ dotrace(
     tcp_seq	th_seq;		/* sequence number */
     tcp_seq	th_ack;		/* acknowledgement number */
     u_short	th_win;		/* window */
+    u_long	eff_win;	/* window after scaling */
     short	ip_len;		/* total length */
     enum t_ack	ack_type=NORMAL; /* how should we draw the ACK */
+    seqnum	old_this_windowend; /* for graphing */
 
     /* make sure we have enough of the packet */
     if ((unsigned)ptcp + sizeof(struct tcphdr)-1 > (unsigned)plast) {
@@ -674,6 +754,8 @@ dotrace(
     }
     ptp_save->last_time = current_time;
 
+
+
     /* bug fix:  it's legal to have the same end points reused.  The */
     /* program uses a heuristic of looking at the elapsed time from */
     /* the last packet on the previous instance and the number of FINs */
@@ -700,16 +782,96 @@ dotrace(
     /* end bug fix */
 
 
+    /* compute the "effective window", which is the advertised window */
+    /* with scaling */
+    if (ACK_SET(ptcp) || SYN_SET(ptcp)) {
+	eff_win = (u_long) th_win;
+
+	/* N.B., the window_scale stored for the connection DURING 3way */
+	/* handshaking is the REQUESTED scale.  It's only valid if both */
+	/* sides request scaling.  AFTER we've seen both SYNs, that field */
+	/* is reset (above) to contain zero.  Note that if we */
+	/* DIDN'T see the SYNs, the windows will be off. */
+	if (thisdir->f1323_ws && otherdir->f1323_ws)
+	    eff_win <<= thisdir->window_scale;
+    } else {
+	eff_win = 0;
+    }
+
+    
     /* idle-time stats */
     if (!ZERO_TIME(&thisdir->last_time)) {
-	u_long itime = elapsed(thisdir->last_time,current_time);
+	u_llong itime = elapsed(thisdir->last_time,current_time);
 	if (itime > thisdir->idle_max)
 	    thisdir->idle_max = itime;
     }
     thisdir->last_time = current_time;
     
 
-    /* if we're ignoring this connection, do no further processing */
+    /* calculate data length */
+    tcp_length = getpayloadlength(pip, plast);
+    tcp_data_length = tcp_length - (4 * ptcp->th_off);
+
+    /* calc. data range */
+    start = th_seq;
+    end = start + tcp_data_length;
+
+    /* record sequence limits */
+    if (SYN_SET(ptcp)) {
+	/* error checking - better not change! */
+	if ((thisdir->syn_count > 1) && (thisdir->syn != start)) {
+	    /* it changed, that shouldn't happen! */
+	    if (warn_printbad_syn_fin_seq)
+		fprintf(stderr, "\
+%s->%s: rexmitted SYN had diff. seqnum! (was %lu, now %lu, etime: %d sec)\n",
+			thisdir->host_letter,thisdir->ptwin->host_letter,
+			thisdir->syn, start,
+			(int)(elapsed(ptp_save->first_time,current_time)/1000000));
+	    thisdir->bad_behavior = TRUE;
+	}
+	thisdir->syn = start;
+	otherdir->ack = start;
+		/* bug fix for Rob Austein <sra@epilogue.com> */
+    }
+    if (FIN_SET(ptcp)) {
+	/* bug fix, if there's data here too, we need to bump up the FIN */
+	/* (psc data file shows example) */
+	u_long fin = start + tcp_data_length;
+	/* error checking - better not change! */
+	if ((thisdir->fin_count > 1) && (thisdir->fin != fin)) {
+	    /* it changed, that shouldn't happen! */
+	    if (warn_printbad_syn_fin_seq)
+		fprintf(stderr, "\
+%s->%s: rexmitted FIN had diff. seqnum! (was %lu, now %lu, etime: %d sec)\n",
+			thisdir->host_letter,thisdir->ptwin->host_letter,
+			thisdir->fin, fin,
+			(int)(elapsed(ptp_save->first_time,current_time)/1000000));
+	    thisdir->bad_behavior = TRUE;
+	}
+	thisdir->fin = fin;
+    }
+
+    /* "ONLY" bug fix - Wed Feb 24, 1999 */
+    /* the tcp-splicing heuristic needs "windowend", which was only being */
+    /* calculated BELOW the "only" point below.  Move that part of the */
+    /* calculation up here! */
+
+    /* remember the OLD window end for graphing */
+    /* (bug fix - Thu Aug 12, 1999) */
+    old_this_windowend = thisdir->windowend;
+
+    if (ACK_SET(ptcp)) {
+	thisdir->windowend = th_ack + eff_win;
+    }
+    /* end bugfix */
+
+
+
+    /***********************************************************************/
+    /***********************************************************************/
+    /* if we're ignoring this connection, do no further processing	   */
+    /***********************************************************************/
+    /***********************************************************************/
     if (ptp_save->ignore_pair) {
 	return(ptp_save);
     }
@@ -770,18 +932,6 @@ dotrace(
 	++thisdir->sacks_sent;
     }
 
-    /* calculate data length */
-    tcp_length = getpayloadlength(pip, plast);
-    tcp_data_length = tcp_length - (4 * ptcp->th_off);
-
-    /* SYN and FIN are really data, too (sortof) */
-#ifdef OLD
-    /* Mark didn't like this and I can't remember why I did it anyway... */
-    if (SYN_SET(ptcp)) ++tcp_data_length;
-    if (FIN_SET(ptcp)) ++tcp_data_length;
-#endif /* OLD */
-
-
     /* do data stats */
     if (tcp_data_length > 0) {
 	thisdir->data_pkts += 1;
@@ -815,10 +965,6 @@ dotrace(
 		    thisdir->data_bytes / thisdir->data_pkts);
     }
 
-    /* calc. data range */
-    start = th_seq;
-    end = start + tcp_data_length;
-
     /* set minimum seq */
     if ((thisdir->min_seq == 0) && (start != 0)) {
 	thisdir->min_seq = start;
@@ -831,6 +977,14 @@ dotrace(
     if (PIP_ISV4(pip))
 	hw_dup = check_hw_dups(pip->ip_id, th_seq, thisdir);
 
+
+    /* Kevin Lahey's ECN code */
+    /* only works for IPv4 */
+    if (PIP_ISV4(pip)) {
+	ecn_ce = IP_ECT(pip) && IP_CE(pip);
+    }
+    cwr = CWR_SET(ptcp);
+    ecn_echo = ECN_ECHO_SET(ptcp);
 
     /* save the stream contents, if requested */
     if (tcp_data_length > 0) {
@@ -853,37 +1007,45 @@ dotrace(
 	    ExtractContents(start,tcp_data_length,saved,pdata,thisdir);
     }
 
-    /* record sequence limits */
-    if (SYN_SET(ptcp)) {
-	thisdir->syn = start;
-	otherdir->ack = start;
-		/* bug fix for Rob Austein <sra@epilogue.com> */
-    }
-    if (FIN_SET(ptcp)) {
-	/* bug fix, if there's data here too, we need to bump up the FIN */
-	/* (psc data file shows example) */
-	thisdir->fin = start + tcp_data_length;
-    }
-
     /* do rexmit stats */
     retrans = FALSE;
     out_order = FALSE;
     retrans_num_bytes = 0;
     if (SYN_SET(ptcp) || FIN_SET(ptcp) || tcp_data_length > 0) {
 	int len = tcp_data_length;
+	int retrans;
 	
 	if (SYN_SET(ptcp)) ++len;
 	if (FIN_SET(ptcp)) ++len;
 
-	retrans_num_bytes = rexmit(thisdir,start, len, &out_order);
+	retrans = retrans_num_bytes = rexmit(thisdir,start, len, &out_order);
 	if (out_order)
 	    ++thisdir->out_order_pkts;
+
+	/* count anything NOT retransmitted as "unique" */
+	/* exclude SYN and FIN */
+	if (SYN_SET(ptcp)) {
+	    /* don't count the SYN as data */
+	    --len;
+	    /* if the SYN was rexmitted, then don't count it */
+	    if (thisdir->syn_count > 1)
+		--retrans;
+	}
+	if (FIN_SET(ptcp)) {
+	    /* don't count the FIN as data */
+	    --len;
+	    /* if the FIN was rexmitted, then don't count it */
+	    if (thisdir->fin_count > 1)
+		--retrans;
+	}
+	if (retrans < len)
+	    thisdir->unique_bytes += (len - retrans);
     }
 
 
     /* do rtt stats */
     if (ACK_SET(ptcp)) {
-	ack_type = ack_in(otherdir,th_ack);
+	ack_type = ack_in(otherdir,th_ack,tcp_data_length);
     }
 
 
@@ -898,11 +1060,15 @@ dotrace(
 			 "c", "O");
     }
 
-    if ((thisdir->time.tv_sec != -1) && (retrans_num_bytes>0)) {
+    /* stats for rexmitted data */
+    if (retrans_num_bytes>0) {
 	retrans = TRUE;
 	thisdir->rexmit_pkts += 1;
 	thisdir->rexmit_bytes += retrans_num_bytes;
-	if (from_tsgpl != NO_PLOTTER && show_rexmit) {
+	/* don't color the SYNs and FINs, it's confusing, we'll do them */
+	/* differently below... */
+	if (!(FIN_SET(ptcp)||SYN_SET(ptcp)) &&
+	    from_tsgpl != NO_PLOTTER && show_rexmit) {
 	    plotter_perm_color(from_tsgpl, retrans_color);
 	    plotter_text(from_tsgpl, current_time, SeqRep(thisdir,end),
 			 "a", hw_dup?"HD":"R");
@@ -930,19 +1096,32 @@ dotrace(
 		plotter_dot(from_tsgpl,
 			    ptp_save->first_time, SeqRep(thisdir,start));
 	    }
-	    plotter_perm_color(from_tsgpl, hw_dup?hw_dup_color:synfin_color);
+	    plotter_perm_color(from_tsgpl,
+			       hw_dup?hw_dup_color:
+			       retrans_num_bytes>0?retrans_color:
+			       synfin_color);
 	    plotter_diamond(from_tsgpl, current_time, SeqRep(thisdir,start));
 	    plotter_text(from_tsgpl, current_time,
-			 SeqRep(thisdir,end), "a", hw_dup?"HD SYN":"SYN");
+			 SeqRep(thisdir,end), "a",
+			 hw_dup?"HD SYN":
+			 retrans_num_bytes>0?"R SYN":
+			 "SYN");
 	    plotter_uarrow(from_tsgpl, current_time, SeqRep(thisdir,end));
 	    plotter_line(from_tsgpl,
 			 current_time, SeqRep(thisdir,start),
 			 current_time, SeqRep(thisdir,end));
 	} else if (FIN_SET(ptcp)) {	/* FIN  */
-	    plotter_perm_color(from_tsgpl, hw_dup?hw_dup_color:synfin_color);
+	    plotter_perm_color(from_tsgpl,
+			       hw_dup?hw_dup_color:
+			       retrans_num_bytes>0?retrans_color:
+			       synfin_color);
 	    plotter_box(from_tsgpl, current_time, SeqRep(thisdir,start));
 	    plotter_text(from_tsgpl, current_time,
-			 SeqRep(thisdir,end), "a", hw_dup?"HD FIN":"FIN");
+			 SeqRep(thisdir,end), "a",
+			 hw_dup?"HD FIN":
+			 retrans_num_bytes>0?"R FIN":
+			 "FIN");
+
 	    plotter_uarrow(from_tsgpl, current_time, SeqRep(thisdir,end));
 	    plotter_line(from_tsgpl,
 			 current_time, SeqRep(thisdir,start),
@@ -978,11 +1157,21 @@ dotrace(
 			       current_time, SeqRep(thisdir,start));
 	    }
 	}
+
+	/* Kevin Lahey's code */
+	/* XXX:  can this overwrite other labels!? */
+	if (cwr || ecn_ce) {
+	    plotter_perm_color(from_tsgpl, ecn_color);
+	    plotter_diamond(from_tsgpl,
+			    current_time, SeqRep(thisdir,start));
+	    plotter_text(from_tsgpl, current_time, SeqRep(thisdir, start), "a",
+			 cwr ? (ecn_ce ? "CWR CE" : "CWR") : "CE");
+	}
     }
 
     /* check for RESET */
     if (RESET_SET(ptcp)) {
-	unsigned int plot_at;
+	u_long plot_at;
 
 	/* if there's an ACK in this packet, plot it there */
 	/* otherwise, plot it at the last valid ACK we have */
@@ -1009,23 +1198,25 @@ dotrace(
     }
 
     
+    /* do window stats (include first SYN too!) */
+    if (ACK_SET(ptcp) || SYN_SET(ptcp)) {
+	if (eff_win > thisdir->win_max)
+	    thisdir->win_max = eff_win;
+	if ((eff_win > 0) &&
+	    ((thisdir->win_min == 0) ||
+	     (eff_win < thisdir->win_min)))
+	    thisdir->win_min = eff_win;
+	thisdir->win_tot += eff_win;
+    }
+
     /* draw the ack and win in the other plotter */
     if (ACK_SET(ptcp)) {
-	unsigned int ack = th_ack;
-	unsigned int win = th_win << thisdir->window_scale;
-	unsigned int winend;
+	seqnum ack = th_ack;
+	u_long winend;
 
-	winend = ack + win;
+	winend = ack + eff_win;
       
-	/* do window stats */
-	if (win > thisdir->win_max)
-	    thisdir->win_max = win;
-	if ((win > 0) &&
-	    ((thisdir->win_min == 0) ||
-	     (win < thisdir->win_min)))
-	    thisdir->win_min = win;
-	thisdir->win_tot += win;
-	if (win == 0) {
+	if (eff_win == 0) {
 	    ++thisdir->win_zero_ct;
 	    if (to_tsgpl != NO_PLOTTER && show_zero_window) {
 		plotter_temp_color(to_tsgpl, text_color);
@@ -1058,43 +1249,52 @@ dotrace(
 		plotter_line(to_tsgpl,
 			     current_time, SeqRep(otherdir,thisdir->ack),
 			     current_time, SeqRep(otherdir,ack));
-		/* draw dongles for "interesting" acks */
-		switch (ack_type) {
-		  case NORMAL:	/* normal case */
-		    /* no dongle */
-		    break;
-		  case CUMUL:	/* cumulative */
-		    /* won't happen, not plotted here */
-		    break;
-		  case TRIPLE:	/* triple dupacks */
-		    /* won't happen, not plotted here */
-		    break;
-		  case AMBIG:	/* ambiguous */
-		    plotter_temp_color(to_tsgpl, ackdongle_ambig_color);
-		    plotter_diamond(to_tsgpl, current_time,
-				    SeqRep(otherdir,ack));
-		    break;
-		  case NOSAMP:	/* acks retransmitted stuff cumulatively */
-		    plotter_temp_color(to_tsgpl, ackdongle_nosample_color);
-		    plotter_diamond(to_tsgpl, current_time,
-				    SeqRep(otherdir,ack));
-		    break;
+		if (show_rtt_dongles) {
+		    /* draw dongles for "interesting" acks */
+		    switch (ack_type) {
+		      case NORMAL:	/* normal case */
+			/* no dongle */
+			break;
+		      case CUMUL:	/* cumulative */
+			/* won't happen, not plotted here */
+			break;
+		      case TRIPLE:	/* triple dupacks */
+			/* won't happen, not plotted here */
+			break;
+		      case AMBIG:	/* ambiguous */
+			plotter_temp_color(to_tsgpl, ackdongle_ambig_color);
+			plotter_diamond(to_tsgpl, current_time,
+					SeqRep(otherdir,ack));
+			break;
+		      case NOSAMP:	/* acks retransmitted stuff cumulatively */
+			plotter_temp_color(to_tsgpl, ackdongle_nosample_color);
+			plotter_diamond(to_tsgpl, current_time,
+					SeqRep(otherdir,ack));
+			break;
+		    }
 		}
 	    } else {
 		plotter_dtick(to_tsgpl, current_time, SeqRep(otherdir,ack));
-		if (ack_type == TRIPLE) {
+		if (show_triple_dupack && (ack_type == TRIPLE)) {
 		    plotter_text(to_tsgpl, current_time,
 				 SeqRep(otherdir,ack),
 				 "a", "3");  /* '3' is for triple dupack */
 		}
 	    }
+
+	    /* Kevin Lahey's code */
+	    if (ecn_echo && !SYN_SET(ptcp)) {
+	        plotter_perm_color(to_tsgpl, ecn_color);
+		plotter_diamond(to_tsgpl, current_time, SeqRep(otherdir, ack));
+	    }
+
 	    plotter_perm_color(to_tsgpl, window_color);
 	    plotter_line(to_tsgpl,
-			 thisdir->time, SeqRep(otherdir,thisdir->windowend),
-			 current_time, SeqRep(otherdir,thisdir->windowend));
-	    if (thisdir->windowend != winend) {
+			 thisdir->time, SeqRep(otherdir,old_this_windowend),
+			 current_time, SeqRep(otherdir,old_this_windowend));
+	    if (old_this_windowend != winend) {
 		plotter_line(to_tsgpl,
-			     current_time, SeqRep(otherdir,thisdir->windowend),
+			     current_time, SeqRep(otherdir,old_this_windowend),
 			     current_time, SeqRep(otherdir,winend));
 	    } else {
 		plotter_utick(to_tsgpl, current_time, SeqRep(otherdir,winend));
@@ -1119,7 +1319,8 @@ dotrace(
 	}
 	thisdir->time = current_time;
 	thisdir->ack = ack;
-	thisdir->windowend = winend;
+
+/* 	thisdir->windowend = winend;  (moved above "only" point) */
     }  /* end ACK_SET(ptcp) */
 
     /* do stats for initial window (first slow start) */
@@ -1200,7 +1401,7 @@ trace_done(void)
     for (ix = 0; ix <= num_tcp_pairs; ++ix) {
 	tcp_pair *ptp = ttp[ix];
 	tcb *thisdir; 
-	u_long itime;
+	u_llong itime;
 
 	/* if it's CLOSED, skip it */
 	if ((FinCount(ptp)>=2) || (ConnReset(ptp)))
@@ -1208,15 +1409,20 @@ trace_done(void)
 
 	/* a2b direction */
 	thisdir = &ptp->a2b;
-	itime = elapsed(thisdir->last_time,current_time);
-	if (itime > thisdir->idle_max)
-	    thisdir->idle_max = itime;
+	if (!ZERO_TIME(&thisdir->last_time)) {
+	    itime = elapsed(thisdir->last_time,current_time);
+	    if (itime > thisdir->idle_max)
+		thisdir->idle_max = itime;
+	}
+	    
 
-	/* a2b direction */
+	/* b2a direction */
 	thisdir = &ptp->b2a;
-	itime = elapsed(thisdir->last_time,current_time);
-	if (itime > thisdir->idle_max)
-	    thisdir->idle_max = itime;
+	if (!ZERO_TIME(&thisdir->last_time)) {
+	    itime = elapsed(thisdir->last_time,current_time);
+	    if (itime > thisdir->idle_max)
+		thisdir->idle_max = itime;
+	}
     }
 
     /* if we're filtering, see which connections pass */
@@ -1457,17 +1663,18 @@ ParseOptions: packet %lu too short to parse remaining options\n", pnum);
 	}
 
 #define CHECK_O_LEN(opt) \
-	if (*plen == 0) { fprintf(stderr, "\
+	if (*plen == 0) { \
+	    if (warn_printtrunc) fprintf(stderr, "\
 ParseOptions: packet %lu %s option has length 0, skipping other options\n", \
-              pnum,opt); \
-	      popt = pdata; break;} \
-	if ((unsigned)popt > (unsigned)(plast)) { \
+                                           pnum,opt); \
+	    popt = pdata; break;} \
+	if ((unsigned)popt + *plen - 1 > (unsigned)(plast)) { \
 	    if (warn_printtrunc) \
 		fprintf(stderr, "\
 ParseOptions: packet %lu %s option truncated, skipping other options\n", \
               pnum,opt); \
-	      ++ctrunc; \
-	      popt = pdata; break;} \
+	    ++ctrunc; \
+	    popt = pdata; break;} \
 
 
 	switch (*popt) {
@@ -1526,12 +1733,18 @@ ParseOptions: packet %lu %s option truncated, skipping other options\n", \
 	    psack = (sack_block *)(popt+2);  /* past the kind and length */
 	    popt += *plen;
 	    while ((unsigned)psack < (unsigned)popt) {
+		struct sack_block *psack_local =
+		    &tcpo.sacks[(unsigned)tcpo.sack_count];
 		/* warning, possible alignment problem here, so we'll
 		   use memcpy() and hope for the best */
 		/* better use -fno-builtin to avoid gcc alignment error
 		   in GCC 2.7.2 */
-		memcpy(&tcpo.sacks[(unsigned)tcpo.sack_count], psack,
-		       sizeof(sack_block));
+		memcpy(psack_local, psack, sizeof(sack_block));
+
+		/* convert to local byte order (Jamshid Mahdavi) */
+		psack_local->sack_left  = ntohl(psack_local->sack_left);
+		psack_local->sack_right = ntohl(psack_local->sack_right);
+
 		++psack;
 		if ((unsigned)psack > ((unsigned)plast+1)) {
 		    /* this SACK block isn't all here */
@@ -1773,4 +1986,243 @@ SeqRep(
     } else {
 	return(seq);
     }
+}
+
+
+/*------------------------------------------------------------------------
+ *  cksum  -  Return 16-bit ones complement of 16-bit ones complement sum 
+ *------------------------------------------------------------------------
+ */
+static u_short
+cksum(
+    void *pvoid,		/* any alignment is legal */
+    int nbytes)
+{
+    u_char *pchar = pvoid;
+    u_long sum = 0;
+
+    while (nbytes >= 2) {
+	/* can't assume pointer alignment :-( */
+	sum += (pchar[0]<<8);
+	sum += pchar[1];
+
+	pchar+=2;
+	nbytes -= 2;
+    }
+
+    /* special check for odd length */
+    if (nbytes == 1) {
+	sum += (pchar[0]<<8);
+	/* lower byte is assumed to be 0 */
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);	/* add in carry   */
+    sum += (sum >> 16);			/* maybe one more */
+
+    return(sum);
+}
+
+/* compute IP checksum */
+static u_short
+ip_cksum(
+    struct ip *pip,
+    void *plast)
+{
+    u_short sum;
+    
+    if (PIP_ISV6(pip))
+	return(0);		/* IPv6 has no header checksum */
+    if (!PIP_ISV4(pip))
+	return(1);		/* I have no idea! */
+
+
+    /* quick sanity check, if the packet is truncated, pretend it's valid */
+    if (plast < (void *)((char *)pip+pip->ip_hl*4-1)) {
+	return(0);
+    }
+
+    /* ... else IPv4 */
+    sum = cksum(pip, pip->ip_hl*4);
+    return(sum);
+}
+
+
+/* is the IP checksum valid? */
+Bool
+ip_cksum_valid(
+    struct ip *pip,
+    void *plast)
+{
+    u_short sum;
+/*     PrintRawDataHex("IP header",pip,plast); */
+
+    sum = ip_cksum(pip,plast);
+
+    return((sum == 0) || (sum == 0xffff));
+}
+
+
+/* compute the TCP checksum */
+static u_short
+tcp_cksum(
+    struct ip *pip,
+    struct tcphdr *ptcp,
+    void *plast)
+{
+    u_long sum = 0;
+    unsigned tcp_length;
+
+    /* verify version */
+    if (!PIP_ISV4(pip) && !PIP_ISV6(pip)) {
+	fprintf(stderr,"Internal error, tcp_cksum: neither IPv4 nor IPv6\n");
+	exit(-1);
+    }
+
+
+    /* TCP checksum includes: */
+    /* - IP source */
+    /* - IP dest */
+    /* - IP type */
+    /* - TCP header length + TCP data length */
+    /* - TCP header and data */
+
+    if (PIP_ISV4(pip)) {
+	/* quick sanity check, if the packet is fragmented,
+	   pretend it's valid */
+	if ((ntohs(pip->ip_off) << 2) != 0) {
+	    /* both the offset AND the MF bit must be 0 */
+	    /* (but we shifted off the DF bit */
+	    return(0);
+	}
+
+	/* 2 4-byte numbers, next to each other */
+	sum += cksum(&pip->ip_src,4*2);
+
+	/* type */
+	sum += (u_short) pip->ip_p;
+
+	/* length (TCP header length + TCP data length) */
+	tcp_length = ntohs(pip->ip_len) - (4 * pip->ip_hl);
+	sum += (u_short) htons(tcp_length);
+    } else /* if (PIP_ISV6(pip))*/  {
+	static Bool warned = FALSE;
+
+	/* wow, this gets ugly with pseudo headers, sounds like a good
+	   job for another day :-(  */
+
+	if (!warned) {
+	    fprintf(stderr,"\nWarning: IPv6 TCP checksums not verified\n\n");
+	    warned = TRUE;
+	}
+	return(0);		/* pretend it's valid */
+    }
+
+    /* quick sanity check, if the packet is truncated, pretend it's valid */
+    if (plast < (void *)((char *)ptcp+tcp_length-1)) {
+	return(0);
+    }
+
+
+    /* checksum the TCP header and data */
+    sum += cksum(ptcp,tcp_length);
+
+    /* roll down into a 16-bit number */
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+
+    return (u_short)(~sum & 0xffff);
+}
+
+
+
+/* compute the UDP checksum */
+static u_short
+udp_cksum(
+    struct ip *pip,
+    struct udphdr *pudp,
+    void *plast)
+{
+    u_long sum = 0;
+    unsigned udp_length;
+
+    /* WARNING -- this routine has not been extensively tested */
+
+    /* verify version */
+    if (!PIP_ISV4(pip) && !PIP_ISV6(pip)) {
+	fprintf(stderr,"Internal error, udp_cksum: neither IPv4 nor IPv6\n");
+	exit(-1);
+    }
+
+
+    /* UDP checksum includes: */
+    /* - IP source */
+    /* - IP dest */
+    /* - IP type */
+    /* - UDP length field */
+    /* - UDP header and data */
+
+    if (PIP_ISV4(pip)) {
+	/* 2 4-byte numbers, next to each other */
+	sum += cksum(&pip->ip_src,4*2);
+
+	/* type */
+	sum += (u_short) pip->ip_p;
+
+	/* UDP length */
+	udp_length = ntohs(pudp->uh_ulen);
+	sum += pudp->uh_ulen;
+    } else /* if (PIP_ISV6(pip))*/  {
+	static Bool warned = FALSE;
+
+	/* wow, this gets ugly with pseudo headers, sounds like a good
+	   job for another day :-(  */
+
+	if (!warned) {
+	    fprintf(stderr,"\nWarning: IPv6 UDP checksums not verified\n\n");
+	    warned = TRUE;
+	}
+	return(0);		/* pretend it's valid */
+    }
+
+    /* quick sanity check, if the packet is truncated, pretend it's valid */
+    if (plast < (void *)((char *)pudp+udp_length-1)) {
+	return(0);
+    }
+
+
+    /* checksum the UDP header and data */
+    sum += cksum(pudp,udp_length);
+
+    /* roll down into a 16-bit number */
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+
+    return (u_short)(~sum & 0xffff);
+}
+
+
+/* is the TCP checksum valid? */
+Bool
+tcp_cksum_valid(
+    struct ip *pip,
+    struct tcphdr *ptcp,
+    void *plast)
+{
+    return(tcp_cksum(pip,ptcp,plast) == 0);
+}
+
+
+/* is the UDP checksum valid? */
+Bool
+udp_cksum_valid(
+    struct ip *pip,
+    struct udphdr *pudp,
+    void *plast)
+{
+    if (ntohs(pudp->uh_sum) == 0) {
+	/* checksum not used */
+	return(1);		/* valid */
+    }
+    
+    return(udp_cksum(pip,pudp,plast) == 0);
 }

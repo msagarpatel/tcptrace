@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,8 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
-static char const rcsid_rttgraph[] =
-   "$Id: mod_rttgraph.c,v 1.2 1998/03/05 01:03:51 sdo Exp $";
+static char const rcsid[] =
+   "$Header: /home/sdo/src/tcptrace/src/RCS/mod_rttgraph.c,v 5.3 1999/02/25 15:01:26 sdo Exp $";
 
 #ifdef LOAD_MODULE_RTTGRAPH
 
@@ -248,7 +248,7 @@ rttgraph_read(
     /* convert to ms buckets */
     rtt_ms = (u_long) (rtt_us / 1000.0);
 
-    if (rtt_ms == 0)
+    if (debug && (rtt_ms == 0))
 	printf("rtt_ms is 0, rtt_us was %f\n", rtt_us);
 
     /* add in the sample RTT */

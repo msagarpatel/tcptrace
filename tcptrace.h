@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.h,v 3.58 1998/11/18 13:49:08 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.h,v 5.18 1999/08/12 17:33:10 sdo Exp $";
 
 
 #include <stdio.h>
@@ -55,6 +55,7 @@ static char const rcsid_tcptrace[] =
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* IPv6 support */
 #include "ipv6.h"
@@ -110,6 +111,7 @@ typedef struct timeval timeval;
 typedef u_char Bool;
 #define TRUE	1
 #define FALSE	0
+#define BOOL2STR(b) (b)?"TRUE":"FALSE"
 
 /* ACK types */
 enum t_ack {NORMAL = 1,		/* no retransmits, just advance */
@@ -188,6 +190,7 @@ typedef struct tcb {
     u_llong	data_bytes;
     u_llong	data_pkts;
     u_llong	data_pkts_push;
+    u_llong	unique_bytes;	/* bytes sent (-FIN/SYN), excluding rexmits */
     u_llong	rexmit_bytes;
     u_llong	rexmit_pkts;
     u_llong	ack_pkts;
@@ -218,6 +221,12 @@ typedef struct tcb {
     u_long num_hardware_dups;
     u_char hardware_dups_ix;
 
+    /* did I detect any "bad" tcp behavior? */
+    /* at present, this means: */
+    /*  - SYNs retransmitted with different sequence numbers */
+    /*  - FINs retransmitted with different sequence numbers */
+    Bool	bad_behavior;
+
     /* added for initial window stats (for Mallman) */
     u_long	initialwin_bytes;	/* initial window (in bytes) */
     u_long	initialwin_segs;	/* initial window (in segments) */
@@ -226,7 +235,7 @@ typedef struct tcb {
     /* added for (estimated) congestions window stats (for Mallman) */
     u_long	cwin_max;
     u_long	cwin_min;
-    u_long	cwin_tot;
+    u_llong	cwin_tot;
 
     /* RTT stats for singly-transmitted segments */
     double	rtt_last;	/* RTT as of last good ACK (microseconds) */
@@ -261,12 +270,12 @@ typedef struct tcb {
 
     /* Instantaneous throughput info */
     timeval	thru_firsttime;	/* time of first packet this interval */
-    double	thru_lastthru_i; /* last instantaneous throughput value */
     u_long	thru_bytes;	/* number of bytes this interval */
     u_long	thru_pkts;	/* number of packets this interval */
-    double	thru_lastthru_t; /* last average throughput value */
     PLOTTER	thru_plotter;	/* throughput data dump file */
     timeval	thru_lasttime;	/* time of previous segment */
+    PLINE	thru_avg_line;	/* average throughput line */
+    PLINE	thru_inst_line;	/* instantaneous throughput line */
 
     /* data transfer time stamps - mallman */
     timeval	first_data_time;
@@ -288,8 +297,7 @@ typedef struct tcb {
 
     /* RTT Graph info for this one */
     PLOTTER	rtt_plotter;
-    u_long	rtt_lastrtt;
-    timeval	rtt_lasttime;
+    PLINE	rtt_line;
 
     /* Segment size graph */
     PLOTTER	segsize_plotter;
@@ -303,7 +311,7 @@ typedef struct tcb {
 
     /* for tracking unidirectional idle time */
     timeval	last_time;	/* last packet SENT from this side */
-    u_long	idle_max;	/* maximum idle time observed (usecs) */
+    u_llong	idle_max;	/* maximum idle time observed (usecs) */
 
     /* host name letter(s) */
     char	*host_letter;
@@ -426,7 +434,10 @@ extern Bool graph_segsize;
 extern Bool graph_cwin;
 extern Bool hex;
 extern Bool ignore_non_comp;
-extern Bool nonames;
+extern Bool resolve_ipaddresses;
+extern Bool resolve_ports;
+extern Bool triple_dupack_allows_data;
+extern Bool verify_checksums;
 extern Bool print_rtt;
 extern Bool print_cwin;
 extern Bool printbrief;
@@ -434,13 +445,18 @@ extern Bool printsuppress;
 extern Bool printem;
 extern Bool printallofem;
 extern Bool printticks;
+extern Bool dump_packet_data;
 extern Bool warn_ooo;
 extern Bool warn_printtrunc;
 extern Bool warn_printbadmbz;
 extern Bool warn_printhwdups;
+extern Bool warn_printbad_syn_fin_seq;
 extern Bool show_out_order;
 extern Bool show_rexmit;
 extern Bool show_zero_window;
+extern Bool show_sacks;
+extern Bool show_rtt_dongles;
+extern Bool show_triple_dupack;
 extern Bool use_short_names;
 extern Bool save_tcp_data;
 extern Bool graph_time_zero;
@@ -449,6 +465,7 @@ extern Bool graph_zero_len_pkts;
 extern Bool plot_tput_instant;
 extern Bool filter_output;
 extern Bool do_udp;
+extern Bool show_title;
 extern int debug;
 extern int thru_interval;
 extern u_long pnum;
@@ -456,6 +473,10 @@ extern u_long pnum;
 extern u_long ctrunc;
 extern timeval current_time;
 extern char *output_filename;
+
+/* first and last packet timestamp */
+extern timeval first_packet;
+extern timeval last_packet;
 
 
 #define MAX_NAME 20
@@ -498,9 +519,10 @@ void plotter_diamond(PLOTTER, timeval, u_long);
 void plotter_darrow(PLOTTER, timeval, u_long);
 void plotter_box(PLOTTER, timeval, u_long);
 void plotter_arrow(PLOTTER, timeval, u_long, char);
+void plotter_nothing(PLOTTER pl, struct timeval t);
 void plot_init(void);
 tcp_pair *dotrace(struct ip *, struct tcphdr *ptcp, void *plast);
-void PrintRawData(char *label, void *pfirst, void *plast);
+void PrintRawData(char *label, void *pfirst, void *plast, Bool octal);
 void PrintRawDataHex(char *label, void *pfirst, void *plast);
 void PrintTrace(tcp_pair *);
 void UDPPrintTrace(udp_pair *);
@@ -512,6 +534,7 @@ double elapsed(timeval, timeval);
 void tv_sub(struct timeval *plhs, struct timeval rhs);
 void tv_add(struct timeval *plhs, struct timeval rhs);
 int tv_cmp(struct timeval lhs, struct timeval rhs);
+Bool tv_same(struct timeval lhs, struct timeval rhs);
 char *elapsed2str(double etime);
 int ConnReset(tcp_pair *);
 int ConnComplete(tcp_pair *);
@@ -521,13 +544,14 @@ char *ts2ascii(timeval *);
 char *ts2ascii_date(timeval *);
 char *ServiceName(portnum);
 char *HostName(ipaddr);
+char *HostAddr(ipaddr);
 char *HostLetter(u_int);
 char *NextHostLetter(void);
 char *EndpointName(ipaddr,portnum);
 PLOTTER new_plotter(tcb *plast, char *filename, char *title,
 		    char *xlabel, char *ylabel, char *suffix);
 int rexmit(tcb *, seqnum, seglen, Bool *);
-enum t_ack ack_in(tcb *, seqnum);
+enum t_ack ack_in(tcb *, seqnum, unsigned tcp_data_length);
 void DoThru(tcb *ptcb, int nbytes);
 struct mfile *Mfopen(char *fname, char *mode);
 void Minit(void);
@@ -539,6 +563,7 @@ int Mfseek(MFILE *pmf, long offset, int ptrname);
 int Mfprintf(MFILE *pmf, char *format, ...);
 int Mfflush(MFILE *pmf);
 int Mfclose(MFILE *pmf);
+int Mfpipe(int pipes[2]);
 struct tcp_options *ParseOptions(struct tcphdr *ptcp, void *plast);
 FILE *CompOpenHeader(char *filename);
 FILE *CompOpenFile(char *filename);
@@ -554,6 +579,11 @@ void StringToArgv(char *buf, int *pargc, char ***pargv);
 void CopyAddr(tcp_pair_addrblock *, struct ip *pip,portnum,portnum);
 int WhichDir(tcp_pair_addrblock *, tcp_pair_addrblock *);
 int SameConn(tcp_pair_addrblock *, tcp_pair_addrblock *, int *);
+Bool ip_cksum_valid(struct ip *pip, void *plast);
+Bool tcp_cksum_valid(struct ip *pip, struct tcphdr *ptcp, void *plast);
+Bool udp_cksum_valid(struct ip *pip, struct udphdr *pudp, void *plast);
+ipaddr *str2ipaddr(char *str);
+int IPcmp(ipaddr *pipA, ipaddr *pipB);
 
 /* high-level line drawing */
 PLINE new_line(PLOTTER pl, char *label, char *color);
@@ -578,6 +608,8 @@ Bool PassesFilter(tcp_pair *ptp);
 #define URGENT_SET(ptcp)((ptcp)->th_flags & TH_URG)
 #define FLAG6_SET(ptcp)((ptcp)->th_flags & 0x40)
 #define FLAG7_SET(ptcp)((ptcp)->th_flags & 0x80)
+#define CWR_SET(ptcp)((ptcp)->th_x2 & TH_CWR)
+#define ECN_ECHO_SET(ptcp)((ptcp)->th_x2 & TH_ECN_ECHO)
 
 
 /* connection directions */
@@ -643,6 +675,15 @@ typedef struct opt_unknown {
 #define TCPOPT_CC		11	/* T/TCP CC options (rfc1644) */
 #define TCPOPT_CCNEW		12	/* T/TCP CC options (rfc1644) */
 #define TCPOPT_CCECHO		13	/* T/TCP CC options (rfc1644) */
+
+/* RFC 2481 (ECN) IP and TCP flags (not usually defined yet) */
+#define IPTOS_ECT	0x02	/* ECN-Capable Transport */
+#define IPTOS_CE	0x01	/* Experienced Congestion */
+
+#define TH_ECN_ECHO	0x02	/* Used by receiver to echo CE bit */
+#define TH_CWR		0x01	/* Congestion Window Reduced */
+
+
 
 /* some compilers seem to want to make "char" unsigned by default, */
 /* which is breaking stuff.  Rather than introduce (more) ugly */
@@ -717,6 +758,12 @@ typedef int pread_f(struct timeval *, int *, int *, void **,
 #ifdef GROK_ETHERPEEK
 	pread_f *is_EP(void);
 #endif /* GROK_ETHERPEEK */
+#ifdef GROK_NS
+ 	pread_f *is_ns(void);
+#endif /* GROK_NS */
+#ifdef GROK_NLANR
+	pread_f *is_nlanr(void);
+#endif /* GROK_NLANR */
 
 
 /* I've had problems with the memcpy function that gcc stuffs into the program
@@ -760,7 +807,11 @@ void *MemCpy(void *p1, void *p2, size_t n); /* in tcptrace.c */
 struct ipaddr *IPV4ADDR2ADDR(struct in_addr *addr4);    
 struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);    
 
-
+/*
+ * Macros to check for congestion experienced bits
+ */
+#define IP_CE(pip) (((struct ip *)(pip))->ip_tos & IPTOS_CE)
+#define IP_ECT(pip) (((struct ip *)(pip))->ip_tos & IPTOS_ECT)
 
 /*
  * fixes for various systems that aren't exactly like Solaris

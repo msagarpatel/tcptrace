@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/gcache.c,v 3.6 1998/03/05 01:17:14 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/gcache.c,v 5.4 1999/09/08 02:10:35 sdo Exp $";
 
 
 /*
@@ -193,6 +193,12 @@ cacreate(
 
     bzero(pcb, sizeof(struct cacheblk));
     pcb->cb_status = CB_INUSE;
+#ifdef linux
+#ifdef strncpy
+    /* stupid Linux (redhat?) bug in macro */
+#undef strncpy
+#endif /* strncpy */
+#endif /* linux */
     strncpy(pcb->cb_name,name,CA_NAMELEN);
     pcb->cb_name[CA_NAMELEN-1] = '\00';
     pcb->cb_maxent = nentries;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,10 +26,8 @@
  *		ostermann@cs.ohiou.edu
  */
 /* Added FDDI support 9/96 Jeffrey Semke, Pittsburgh Supercomputing Center */
-static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
-static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcpdump.h,v 1.5 1998/04/14 03:31:15 sdo Exp $";
+static char const rcsid_tcpdump[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcpdump.h,v 5.4 1999/08/30 15:15:06 sdo Exp $";
 
 
 #define	SWAPLONG(y) \
@@ -46,8 +44,10 @@ static char const rcsid[] =
 /* currently supported */
 #define DLT_NULL	0	/* no link-layer encapsulation */
 #define DLT_EN10MB	1	/* Ethernet (10Mb) */
+#define DLT_IEEE802	6	/* IEEE 802 Networks */
 #define DLT_SLIP	8	/* Serial Line IP */
 #define DLT_FDDI	10	/* FDDI */
+#define DLT_ATM_RFC1483	11	/* LLC/SNAP encapsulated atm */
 #define DLT_RAW		12	/* raw IP */
 
 /* NOT currently supported */
@@ -56,10 +56,8 @@ static char const rcsid[] =
 #define DLT_AX25	3	/* Amateur Radio AX.25 */
 #define DLT_PRONET	4	/* Proteon ProNET Token Ring */
 #define DLT_CHAOS	5	/* Chaos */
-#define DLT_IEEE802	6	/* IEEE 802 Networks */
 #define DLT_ARCNET	7	/* ARCNET */
 #define DLT_PPP		9	/* Point-to-point Protocol */
-#define DLT_ATM_RFC1483	11	/* LLC/SNAP encapsulated atm */
 #define DLT_SLIP_BSDOS	13	/* BSD/OS Serial Line IP */
 #define DLT_PPP_BSDOS	14	/* BSD/OS Point-to-point Protocol */
 

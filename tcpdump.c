@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,10 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
+static char const copyright[] =
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+static char const rcsid[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcpdump.c,v 5.6 1999/08/30 15:52:51 sdo Exp $";
 
 #include <stdio.h>
 #include "tcptrace.h"
@@ -77,6 +81,13 @@ static int callback(
 	memcpy(ip_buf,buf+EH_SIZE,iplen);
 	callback_plast = (char *)ip_buf+iplen-EH_SIZE-1;
 	break;
+      case DLT_IEEE802:
+	/* just pretend it's "normal" ethernet */
+	offset = 14;		/* 22 bytes of IEEE cruft */
+	memcpy(&eth_header,buf,EH_SIZE);  /* save ether header */
+	memcpy(ip_buf,buf+offset,iplen);
+	callback_plast = (char *)ip_buf+iplen-offset-1;
+	break;
       case DLT_SLIP:
 	memcpy(ip_buf,buf+16,iplen);
 	callback_plast = (char *)ip_buf+iplen-16-1;
@@ -94,6 +105,11 @@ static int callback(
 	offset = 4;
 	memcpy((char *)ip_buf,buf+offset,iplen);
 	callback_plast = ip_buf+iplen-offset-1;
+	break;
+      case DLT_ATM_RFC1483:
+	/* ATM RFC1483 - LLC/SNAP ecapsulated atm */
+	memcpy((char *)ip_buf,buf+8,iplen);
+	callback_plast = ip_buf+iplen-8-1;
 	break;
       case DLT_RAW:
 	/* raw IP */
@@ -137,6 +153,22 @@ pread_tcpdump(
 	    }
 	    
 	    return(0);
+	}
+
+	/* at least one tcpdump implementation (AIX) seems to be */
+	/* storing NANOseconds in the usecs field of the timestamp. */
+	/* This confuses EVERYTHING.  Try to compensate. */
+	{
+	    static Bool bogus_nanoseconds = FALSE;
+	    if ((callback_phdr->ts.tv_usec >= US_PER_SEC) ||
+		(bogus_nanoseconds)) {
+		if (!bogus_nanoseconds) {
+		    fprintf(stderr,
+			    "tcpdump: attempting to adapt to bogus nanosecond timestamps\n");
+		    bogus_nanoseconds = TRUE;
+		}
+		callback_phdr->ts.tv_usec /= 1000;
+	    }
 	}
 
 	/* fill in all of the return values */
@@ -196,6 +228,10 @@ pread_f *is_tcpdump(void)
 	/* OK, we understand this one */
 	physname = "Ethernet";
 	break;
+      case DLT_IEEE802:
+	/* just pretend it's normal ethernet */
+	physname = "Ethernet";
+	break;
       case DLT_SLIP:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
 	physname = "Slip";
@@ -207,6 +243,10 @@ pread_f *is_tcpdump(void)
       case DLT_NULL:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
 	physname = "NULL";
+	break;
+      case DLT_ATM_RFC1483:
+	eth_header.ether_type = htons(ETHERTYPE_IP);
+	physname = "ATM, LLC/SNAP encapsulated";
 	break;
       case DLT_RAW:
 	eth_header.ether_type = htons(ETHERTYPE_IP);
@@ -274,7 +314,7 @@ PcapSavePacket(
     phdr.ts = current_time;
     phdr.caplen = (unsigned)plast - (unsigned)pip + 1;
     phdr.caplen += EH_SIZE;	/* add in the ether header */
-    phdr.len = EH_SIZE + pip->ip_len;	/* probably this */
+    phdr.len = EH_SIZE + ntohs(PIP_LEN(pip));	/* probably this */
 
     /* write the packet header */
     fwrite(&phdr, sizeof(phdr), 1, f_savefile);

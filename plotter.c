@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 3.24 1998/11/16 21:37:30 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 5.3 1999/06/22 21:35:05 sdo Exp $";
 
 #include "tcptrace.h"
 
@@ -85,22 +85,17 @@ xp_timestamp(
 	    ppi->zerotime = time;
 	}
 
-	/* and subtract from the first timestamp */
-	time.tv_sec  -= ppi->zerotime.tv_sec;
-	time.tv_usec -= ppi->zerotime.tv_usec;
-	if (time.tv_usec < 0) {
-	    /* "borrow" */
-	    time.tv_sec -= 1;
-	    time.tv_usec += 1000000;
-	}
-
 	/* (in)sanity check */
-	if (time.tv_sec < 0) {
+	if (tv_lt(time,ppi->zerotime)) {
 	    fprintf(stderr,"Internal error in plotting (plot file '%s')...\n\
 ZERO-based X-axis plotting requested and elements are not plotted in\n\
 increasing time order.  Try without the '-z' flag\n",
 		    ppi->filename);
 /* 	    exit(-5); */
+	    time.tv_sec = time.tv_usec = 0;
+	} else {
+	    /* computer offset from first plotter point */
+	    tv_sub(&time, ppi->zerotime);
 	}
     }
 
@@ -295,7 +290,8 @@ new_plotter(
 	     ((strcmp(ylabel,"sequence number") == 0)&&(!graph_seq_zero))?
 	     "double":"signed");
 
-    Mfprintf(f,"title\n%s\n", title);
+    if (show_title)
+        Mfprintf(f,"title\n%s\n", title);
     Mfprintf(f,"xlabel\n%s\n", xlabel);
     Mfprintf(f,"ylabel\n%s\n", ylabel);
 
@@ -550,6 +546,20 @@ plotter_vtick(
 
 
 
+/* don't plot ANYTHING, just make sure ZERO point is set! */
+void
+plotter_nothing(
+    PLOTTER pl,
+    struct timeval	t)
+{
+    char *ret;
+    ret = xp_timestamp(pl,t);
+    if (debug > 10)
+	printf("plotter_nothing(%s) gets '%s'\n", ts2ascii(&t), ret);
+}
+
+
+
 void
 plotter_text(
     PLOTTER pl,
@@ -625,12 +635,22 @@ extend_line(
     /* for whom the second point is NOT 0 */
     if (!pline->labelled) {
 	if ((yval != 0) && (!ZERO_TIME(&pline->last_time))) {
+	    timeval tv_elapsed;
 	    timeval tv_avg;
 	    int avg_yval;
 
-	    /* average of last time and this time */
-	    tv_avg.tv_sec = (pline->last_time.tv_sec + xval.tv_sec)/2;
-	    tv_avg.tv_usec = (pline->last_time.tv_usec/2 + xval.tv_usec/2);
+	    /* computer elapsed time for these 2 points */
+	    tv_elapsed = xval;
+	    tv_sub(&tv_elapsed,pline->last_time);
+
+	    /* divide elapsed time by 2 */
+	    tv_elapsed.tv_sec /= 2;
+	    tv_elapsed.tv_usec /= 2;
+
+	    /* add 1/2 of the elapsed time to the oldest point */
+	    /* (giving us the average time) */
+	    tv_avg = pline->last_time;
+	    tv_add(&tv_avg, tv_elapsed);
 
 	    /* average the Y values */
 	    avg_yval = (1 + pline->last_y+yval)/2;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
+static char const rcsid_ipv6[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/ipv6.h,v 5.6 1999/09/07 21:38:06 sdo Exp $";
 
 
 /*
@@ -35,21 +37,24 @@
  */
 #include <sys/types.h>
 
+#ifndef ETHERTYPE_IPV6
 #define ETHERTYPE_IPV6 0x86DD	/* Ethernet type for ipv6 */
+#endif
 
-#ifndef IPV6HDR_NONXTHDR
+/* just guessing... */
+#if !defined(IPPROTO_NONE) && !defined(IPPROTO_FRAGMENT) && !defined(IPPROTO_DSTOPTS) && !defined(INET6_ADDRSTRLEN)
 /* when IPv6 is more widely/standardly deployed, these constants won't need to be
    here.  In the mean time, here's the stuff we need... */
 #define IPV6NOTFOUND
 
 /* header types */
-#define	IPV6HDR_HOPBYHOP	0		/* Hop by hop header for v6 */
+#define	IPPROTO_HOPOPTS		0		/* Hop by hop header for v6 */
 #define	IPPROTO_IPV6		41		/* IPv6 encapsulated in IP */
-#define	IPV6HDR_ROUTING		43		/* Routing header for IPv6 */
-#define	IPV6HDR_FRAGMENT	44		/* Fragment header for IPv6 */
+#define	IPPROTO_ROUTING		43		/* Routing header for IPv6 */
+#define	IPPROTO_FRAGMENT	44		/* Fragment header for IPv6 */
 #define	IPPROTO_ICMPV6		58		/* ICMP for IPv6 */
-#define	IPV6HDR_NONXTHDR	59		/* No next header for IPv6 */
-#define	IPV6HDR_DSTOPTS		60		/* Destinations options */
+#define	IPPROTO_NONE		59		/* No next header for IPv6 */
+#define	IPPROTO_DSTOPTS		60		/* Destinations options */
 
 /* other constants we need */
 #define INET6_ADDRSTRLEN        46              /* IPv6 Address length in a string format*/
@@ -69,12 +74,7 @@ typedef struct in6_addr {
 } in6_addr;
 
 
-/* external routines that we use if found, otherwise substitute our own... */
-#ifndef HAVE_INET_NTOP
-const char *inet_ntop(int, const char *, char *, size_t);
-#endif /* HAVE_INET_NTOP */
-
-#endif /* notdef IPV6HDR_NONXTHDR */
+#endif /* notdef IPPROTO_NONE */
 
 
 /*
@@ -116,3 +116,4 @@ int gethdrlength (struct ip *pip, void *plast);
 int getpayloadlength (struct ip *pip, void *plast);
 struct ipv6_ext *ipv6_nextheader(void *pheader0, u_char *pnextheader);
 char *ipv6_header_name(u_char nextheader);
+char *my_inet_ntop(int af, const char *src, char *dst, size_t size);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/thruput.c,v 3.11 1998/10/13 00:47:19 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/thruput.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -67,6 +67,16 @@ DoThru(
 	ptcb->thru_plotter = new_plotter(ptcb,NULL,title,
 					 "time","thruput (bytes/sec)",
 					 THROUGHPUT_FILE_EXTENSION);
+	if (graph_time_zero) {
+	    /* set graph zero points */
+	    plotter_nothing(ptcb->thru_plotter, current_time);
+	}
+
+	/* create lines for average and instantaneous values */
+	ptcb->thru_avg_line =
+	    new_line(ptcb->thru_plotter, "avg. tput", "blue");
+	ptcb->thru_inst_line =
+	    new_line(ptcb->thru_plotter, "inst. tput", "red");
 
 	return;
     }
@@ -85,11 +95,8 @@ DoThru(
 	thruput = (double) ptcb->thru_bytes / ((double) etime / 1000000.0);
 
 	/* instantaneous plot */
-	plotter_temp_color(ptcb->thru_plotter,"red");
-	plotter_line(ptcb->thru_plotter,
-		     ptcb->thru_firsttime, (int) ptcb->thru_lastthru_i,
+	extend_line(ptcb->thru_inst_line,
 		     current_time, (int) thruput);
-	ptcb->thru_lastthru_i = (int) thruput;
 
 	/* compute stats for connection lifetime */
 	etime = elapsed(ptcb->ptp->first_time,current_time);
@@ -98,11 +105,8 @@ DoThru(
 	thruput = (double) ptcb->data_bytes / ((double) etime / 1000000.0);
 
 	/* long-term average */
-	plotter_temp_color(ptcb->thru_plotter,"blue");
-	plotter_line(ptcb->thru_plotter,
-		     ptcb->thru_firsttime, (int) ptcb->thru_lastthru_t,
+	extend_line(ptcb->thru_avg_line,
 		     current_time, (int) thruput);
-	ptcb->thru_lastthru_t = (int) thruput;
 
 	/* reset stats for this interval */
 	ptcb->thru_firsttime = current_time;

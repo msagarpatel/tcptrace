@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_file_formats[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/file_formats.h,v 3.9 1998/07/23 21:16:04 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/file_formats.h,v 5.4 1999/06/23 19:02:19 sdo Exp $";
 
 
 /* 
@@ -73,11 +73,17 @@ struct supported_formats file_formats[] = {
 	{is_snoop,	"snoop","Sun Snoop -- Distributed with Solaris"},
 #endif /* GROK_SNOOP */
 #ifdef GROK_ETHERPEEK
-	{is_EP,		"etherpeek", "etherpeek -- Mac sniffer program"},
+	{is_EP,		"etherpeek","etherpeek -- Mac sniffer program"},
 #endif /* GROK_ETHERPEEK */
 #ifdef GROK_NETM
 	{is_netm,	"netmetrix","Net Metrix -- Commercial program from HP"},
 #endif /* GROK_NETM */
+#ifdef GROK_NS
+	{is_ns,		"ns","ns -- network simulator from LBL"},
+#endif /* GROK_NS */
+#ifdef GROK_NLANR
+	{is_nlanr,	"tsh","NLANL Tsh Format"},
+#endif /* GROK_NLANR */
 };
 
 #define NUM_FILE_FORMATS (sizeof(file_formats) / sizeof(struct supported_formats))

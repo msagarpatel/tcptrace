@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.c,v 3.57 1998/11/16 20:59:58 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.c,v 5.25 1999/09/15 12:48:04 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -60,11 +60,13 @@ static void UsageModules(void);
 static void LoadModules(int argc, char *argv[]);
 static void CheckArguments(int *pargc, char *argv[]);
 static void ParseArgs(char *argsource, int *pargc, char *argv[]);
+static void ParseExtendedArg(char *argsource, char *arg);
 static void ProcessFile(char *filename);
 static void QuitSig(int signum);
 static void Usage(void);
 static void BadArg(char *argsource, char *format, ...);
 static void Version(void);
+static char *FileToBuf(char *filename);
 
 
 /* option flags and default values */
@@ -77,6 +79,7 @@ Bool graph_segsize = FALSE;
 Bool graph_cwin = FALSE;
 Bool hex = TRUE;
 Bool ignore_non_comp = FALSE;
+Bool dump_packet_data = FALSE;
 Bool print_rtt = FALSE;
 Bool print_cwin = FALSE;
 Bool printbrief = TRUE;
@@ -88,18 +91,28 @@ Bool warn_ooo = FALSE;
 Bool warn_printtrunc = FALSE;
 Bool warn_printbadmbz = FALSE;
 Bool warn_printhwdups = FALSE;
+Bool warn_printbadcsum = FALSE;
+Bool warn_printbad_syn_fin_seq = FALSE;
 Bool save_tcp_data = FALSE;
 Bool graph_time_zero = FALSE;
 Bool graph_seq_zero = FALSE;
 Bool graph_zero_len_pkts = TRUE;
 Bool plot_tput_instant = TRUE;
 Bool filter_output = FALSE;
+Bool show_title = TRUE;
 Bool do_udp = FALSE;
+Bool resolve_ipaddresses = TRUE;
+Bool resolve_ports = TRUE;
+Bool verify_checksums = FALSE;
+Bool triple_dupack_allows_data = FALSE;
 int debug = 0;
 u_long beginpnum = 0;
-u_long endpnum = ~0;
+u_long endpnum = 0;
 u_long pnum = 0;
 u_long ctrunc = 0;
+u_long bad_ip_checksums = 0;
+u_long bad_tcp_checksums = 0;
+u_long bad_udp_checksums = 0;
 
 /* globals */
 struct timeval current_time;
@@ -109,7 +122,7 @@ char *ColorNames[NCOLORS] =
 
 
 /* locally global variables */
-static u_long filesize = -1;
+static u_long filesize = 0;
 char **filenames = NULL;
 int num_files = 0;
 u_int numfiles;
@@ -117,9 +130,65 @@ char *cur_filename;
 static char *progname;
 char *output_filename = NULL;
 
+/* for elapsed processing time */
+struct timeval wallclock_start;
+struct timeval wallclock_finished;
+
+
 /* first and last packet timestamp */
 timeval first_packet = {0,0};
 timeval last_packet = {0,0};
+
+
+/* extended boolean options */
+static struct ext_bool_op {
+    char *bool_optname;
+    Bool *bool_popt;
+    Bool bool_default;
+    char *bool_descr;
+} extended_bools[] = {
+    {"showsacks", &show_sacks,  TRUE,
+     "show SACK blocks on time sequence graphs"},
+    {"showrexmit", &show_rexmit,  TRUE,
+     "mark retransmits on time sequence graphs"},
+    {"showoutorder", &show_out_order,  TRUE,
+     "mark out-of-order on time sequence graphs"},
+    {"showzerowindow", &show_zero_window,  TRUE,
+     "mark zero windows on time sequence graphs"},
+    {"showrttdongles", &show_rtt_dongles,  TRUE,
+     "mark non-RTT-generating ACKs with special symbols"},
+    {"showdupack3", &show_triple_dupack,  TRUE,
+     "mark triple dupacks on time sequence graphs"},
+    {"showzerolensegs", &graph_zero_len_pkts,  TRUE,
+     "show zero length packets on time sequence graphs"},
+    {"showtitle", &show_title,  TRUE,
+     "show title on the graphs"},
+    {"res_addr", &resolve_ipaddresses,  TRUE,
+     "resolve IP addresses into names (may be slow)"},
+    {"res_port", &resolve_ports,  TRUE,
+     "resolve port numbers into names"},
+    {"checksum", &verify_checksums,  TRUE,
+     "verify IP and TCP checksums"},
+    {"dupack3_data", &triple_dupack_allows_data, TRUE,
+     "count a duplicate ACK carrying data as a triple dupack"},
+    {"warn_ooo", &warn_ooo,  TRUE,
+     "print warnings when packets timestamps are out of order"},
+    {"warn_printtrunc", &warn_printtrunc,  TRUE,
+     "print warnings when packets are too short to analyze"},
+    {"warn_printbadmbz", &warn_printbadmbz, TRUE,
+     "print warnings when MustBeZero TCP fields are NOT 0"},
+    {"warn_printhwdups", &warn_printhwdups, TRUE,
+     "print warnings for hardware duplicates"},
+    {"warn_printbadcsum", &warn_printbadcsum, TRUE,
+     "print warnings when packets with bad checksums"},
+    {"warn_printbad_syn_fin_seq", &warn_printbad_syn_fin_seq, TRUE,
+     "print warnings when SYNs or FINs rexmitted with different sequence numbers"},
+    {"dump_packet_data", &dump_packet_data, TRUE,
+     "print all packets AND dump the TCP/UDP data"},
+
+};
+#define NUM_EXTENDED_BOOLS (sizeof(extended_bools) / sizeof(struct ext_bool_op))
+
 
 
 static void
@@ -128,6 +197,7 @@ Help(
 {
     if (harg && *harg && strncmp(harg,"arg",3) == 0) {
 	Args();
+    } else if (harg && *harg && strncmp(harg,"xarg",3) == 0) {
 	UsageModules();
     } else if (harg && *harg && strncmp(harg,"filt",4) == 0) {
 	HelpFilter();
@@ -144,6 +214,7 @@ Help(
 	fprintf(stderr,"\
 For help on specific topics, try:  \n\
   -hargs    tell me about the program's arguments  \n\
+  -hxargs   tell me about the module arguments  \n\
   -hconfig  tell me about the configuration of this binary  \n\
   -houtput  explain what the output means  \n\
   -hfilter  output filtering help  \n\
@@ -316,11 +387,11 @@ For the first run through a file, just use \"tcptrace file\" to see\n\
 For large files, use \"-t\" and I'll give you progress feedback as I go\n\
 If there's a lot of hosts, particularly if they're non-local, use \"-n\"\n\
    to disable address to name mapping which can be very slow\n\
-If you're graphing results and only want the information for a few hosts,\n\
-   from a large file, use the -o flag, as in \"tcptrace -o3,4,5 -o8,11\" to only\n\
-   process connections 3,4,5,8 and 11.  Writing the graphics files can be slow\n\
-   Alternately, the '-oFILE' option is OK if you want to write the connection\n\
-   list into a file using some other program\n\
+If you're graphing results and only want the information for a few conns,\n\
+   from a large file, use the -o flag, as in \"tcptrace -o3,4,5 -o8-11\" to\n\
+   only process connections 3,4,5, and 8 through 11.\n\
+   Alternately, the '-oFILE' option allows you to write the connection\n\
+   list into a file using some other program (or the file PF from -f)\n\
 Make sure the snap length in the packet grabber is big enough.\n\
      Ethernet headers are 14 bytes, as are several others\n\
      IPv4 headers are at least 20 bytes, but can be as large as 64 bytes\n\
@@ -331,8 +402,9 @@ Make sure the snap length in the packet grabber is big enough.\n\
    options (TCP usually has some), you still need at least 54 bytes.\n\
 Compress trace files using gzip, I can uncompress them on the fly\n\
 Stuff arguments that you always use into either the tcptrace resource file\n\
-   ($HOME/%s) or the envariable %s.  If you need to turn them off again\n\
-   from the command line, you can use the \"+\" option flag.\n\
+   ($HOME/%s) or the envariable %s.  If you need to turn\n\
+   them off again from the command line, you can use\n\
+   the \"+\" option flag.\n\
 ", TCPTRACE_RC_FILE, TCPTRACE_ENVARIABLE);
 }
 
@@ -340,6 +412,8 @@ Stuff arguments that you always use into either the tcptrace resource file\n\
 static void
 Args(void)
 {
+    int i;
+    
     fprintf(stderr,"\n\
 Note: these options are first read from the file $HOME/%s\n\
   (if it exists), and then from the environment variable %s\n\
@@ -366,8 +440,8 @@ Output format detail options\n\
   -s      use short names (list \"picard.cs.ohiou.edu\" as just \"picard\")\n\
 Connection filtering options\n\
   -iN     ignore connection N (can use multiple times)\n\
-  -oN     only connection N (can use multiple times)\n\
-          (if N is not a number but a file, read list from file instead)\n\
+  -oN[-M] only connection N (or N through M).  Arg can be used many times.\n\
+          In N is a file rather than a number, read list from file instead.\n\
   -c      ignore non-complete connections (didn't see syn's and fin's)\n\
   -BN     first segment number to analyze (default 1)\n\
   -EN     last segment number to analyze (default last in file)\n\
@@ -375,7 +449,7 @@ Graphing detail options\n\
   -C      produce color plot[s]\n\
   -M      produce monochrome (b/w) plot[s]\n\
   -AN     Average N segments for throughput graphs, default is 10\n\
-  -z      zero axis options
+  -z      zero axis options\n\
     -z      plot time axis from 0 rather than wall clock time (backward compat)\n\
     -zx     plot time axis from 0 rather than wall clock time\n\
     -zy     plot sequence numbers from 0 (time sequence graphs only)\n\
@@ -400,8 +474,23 @@ Dump File Names\n\
   The files can be compressed, see compress.h for configuration.\n\
   If the dump file name is 'stdin', then we read from standard input\n\
     rather than from a file\n\
+");
+
+    fprintf(stderr,"\nExtended boolean options, mostly for graphing options\n");
+    fprintf(stderr," (unambiguous prefixes also work)\n");
+    for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
+	struct ext_bool_op *pbop = &extended_bools[i];
+	fprintf(stderr,"  --%-20s %s %s\n",
+		pbop->bool_optname, pbop->bool_descr,
+		(*pbop->bool_popt == pbop->bool_default)?"(default)":"");
+	fprintf(stderr,"  --no%-18s DON'T %s %s\n",
+		pbop->bool_optname, pbop->bool_descr,
+		(*pbop->bool_popt != pbop->bool_default)?"(default)":"");
+    }
+
+    fprintf(stderr,"\n\
 Module options\n\
-  -xMODULE_SPECIFIC\n\
+  -xMODULE_SPECIFIC  (see -hxargs for details)\n\
 ");
 }
 
@@ -438,10 +527,10 @@ ListModules(void)
     for (i=0; i < NUM_MODULES; ++i) {
 	fprintf(stderr,"  %-15s  %s\n",
 		modules[i].module_name, modules[i].module_descr);
-	if (modules[i].module_usage) {
-	    fprintf(stderr,"    usage:\n");
-	    (*modules[i].module_usage)();
-	}
+/* 	if (modules[i].module_usage) { */
+/* 	    fprintf(stderr,"    usage:\n"); */
+/* 	    (*modules[i].module_usage)(); */
+/* 	} */
     }
 }
 
@@ -487,9 +576,14 @@ main(
     if (do_udp)
 	udptrace_init();
 
+    /* get starting wallclock time */
+    gettimeofday(&wallclock_start, NULL);
+
     num_files = argc;
-    printf("%d args remaining, starting with '%s'\n",
-	   num_files, filenames[0]);
+    printf("%d arg%s remaining, starting with '%s'\n",
+	   num_files,
+	   num_files>1?"s":"",
+	   filenames[0]);
     
 
 
@@ -517,12 +611,23 @@ main(
     if (printticks)
 	printf("\n");
 
+    /* get ending wallclock time */
+    gettimeofday(&wallclock_finished, NULL);
+
     /* general output */
-    fprintf(stdout,"%lu packets seen, %lu TCP packets traced",
+    fprintf(stdout, "%lu packets seen, %lu TCP packets traced",
 	    pnum, tcp_trace_count);
     if (do_udp)
 	fprintf(stdout,", %lu UDP packets traced", udp_trace_count);
     fprintf(stdout,"\n");
+
+    /* processing time */
+    etime = elapsed(wallclock_start,wallclock_finished);
+    fprintf(stdout, "elapsed wallclock time: %s, %d pkts/sec analyzed\n",
+	    elapsed2str(etime),
+	    (int)((double)pnum/(etime/1000000)));
+
+    /* actual tracefile times */
     etime = elapsed(first_packet,last_packet);
     fprintf(stdout,"trace %s elapsed time: %s\n",
 	    (num_files==1)?"file":"files",
@@ -530,6 +635,12 @@ main(
     if (debug) {
 	fprintf(stdout,"\tfirst packet:  %s\n", ts2ascii(&first_packet));
 	fprintf(stdout,"\tlast packet:   %s\n", ts2ascii(&last_packet));
+    }
+    if (verify_checksums) {
+	fprintf(stdout,"bad IP checksums:  %ld\n", bad_ip_checksums);
+	fprintf(stdout,"bad TCP checksums: %ld\n", bad_tcp_checksums);
+	if (do_udp)
+	    fprintf(stdout,"bad UDP checksums: %ld\n", bad_udp_checksums);
     }
 
     /* close files, cleanup, and etc... */
@@ -629,9 +740,9 @@ ProcessFile(
 The first %d characters are all printable ASCII characters. All of the\n\
 packet grabbing formats that I understand output BINARY files that I\n\
 like to read.  Could it be that you've tried to give me the readable \n\
-output instead?.  For example, with tcpdump, you need to use:
+output instead?  For example, with tcpdump, you need to use:\n\
 \t tcpdump -w outfile.dmp ; tcptrace outfile.dmp\n\
-rather than:
+rather than:\n\
 \t tcpdump > outfile ; tcptrace outfile\n\n\
 ", count);
 		exit(1);
@@ -667,8 +778,19 @@ rather than:
 	if (ret == 0) /* EOF */
 	    break;
 
+	/* update global and per-file packet counters */
 	++pnum;			/* global */
 	++fpnum;		/* local to this file */
+
+
+	/* in case only a subset analysis was requested */
+	if (pnum < beginpnum)	continue;
+	if ((endpnum != 0) && (pnum > endpnum))	{
+	    --pnum;
+	    --fpnum;
+	    break;
+	    }
+
 
 	/* check for re-ordered packets */
 	if (!ZERO_TIME(&last_packet)) {
@@ -744,10 +866,6 @@ That will likely confuse the program, so be careful!\n", filename);
 	    fflush(stderr);
 	}
 
-	/* in case only a subset analysis was requested */
-	if (pnum < beginpnum)	continue;
-	if (pnum > endpnum)	break;
-
 
 	/* quick sanity check, better be an IPv4/v6 packet */
 	if (!PIP_ISV4(pip) && !PIP_ISV6(pip)) {
@@ -786,7 +904,7 @@ for other packet types, I just don't have a place to test them\n\n");
 	}
 
 	/* print the packet, if requested */
-	if (printallofem) {
+	if (printallofem || dump_packet_data) {
 	    printf("Packet %lu\n", pnum);
 	    printpacket(len,tlen,phys,phystype,pip,plast);
 	}
@@ -796,6 +914,16 @@ for other packet types, I just don't have a place to test them\n\n");
 	    first_packet = current_time;
 	last_packet = current_time;
 
+	/* verify IP checksums, if requested */
+	if (verify_checksums) {
+	    if (!ip_cksum_valid(pip,plast)) {
+		++bad_ip_checksums;
+		if (warn_printbadcsum)
+		    fprintf(stderr, "packet %lu: bad IP checksum\n", pnum);
+		continue;
+	    }
+	}
+		       
 	/* find the start of the TCP header */
 	ptcp = gettcp (pip, &plast);
 
@@ -809,6 +937,18 @@ for other packet types, I just don't have a place to test them\n\n");
 
 	    if (do_udp && (pudp != NULL)) {
 		pup = udpdotrace(pip,pudp,plast);
+
+		/* verify UDP checksums, if requested */
+		if (verify_checksums) {
+		    if (!udp_cksum_valid(pip,pudp,plast)) {
+			++bad_udp_checksums;
+			if (warn_printbadcsum)
+			    fprintf(stderr, "packet %lu: bad UDP checksum\n",
+				    pnum);
+			continue;
+		    }
+		}
+		       
 		/* if it's a new connection, tell the modules */
 		if (pup && pup->packets == 1)
 		    ModulesPerUDPConn(pup);
@@ -820,20 +960,34 @@ for other packet types, I just don't have a place to test them\n\n");
 	    }
 	    continue;
 	}
+
+	/* verify TCP checksums, if requested */
+	if (verify_checksums) {
+	    if (!tcp_cksum_valid(pip,ptcp,plast)) {
+		++bad_tcp_checksums;
+		if (warn_printbadcsum) 
+		    fprintf(stderr, "packet %lu: bad TCP checksum\n", pnum);
+		continue;
+	    }
+	}
 		       
-        /* perform packet analysis */
+        /* perform TCP packet analysis */
 	ptp = dotrace(pip,ptcp,plast);
 
 	/* if it wasn't "interesting", we return NULL here */
 	if (ptp == NULL)
 	    continue;
 
-	/* if it's a new connection, tell the modules */
-	if (ptp->packets == 1)
-	    ModulesPerConn(ptp);
+	/* unless this connection is being ignored, tell the modules */
+	/* about it */
+	if (!ptp->ignore_pair) {
+	    /* if it's a new connection, tell the modules */
+	    if (ptp->packets == 1)
+		ModulesPerConn(ptp);
 
-	/* also, pass the packet to any modules defined */
-	ModulesPerPacket(pip,ptp,plast);
+	    /* also, pass the packet to any modules defined */
+	    ModulesPerPacket(pip,ptp,plast);
+	}
 
 	/* for efficiency, only allow a signal every 1000 packets	*/
 	/* (otherwise the system call overhead will kill us)		*/
@@ -888,6 +1042,14 @@ MallocZ(
 	ptr = malloc(nbytes);
 	if (ptr == NULL) {
 		perror("Malloc failed, fatal\n");
+		fprintf(stderr,"\
+when memory allocation fails, it's either because:\n\
+1) You're out of swap space, talk to your local sysadmin about making more\n\
+   (look for system commands 'swap' or 'swapon' for quick fixes)\n\
+2) The amount of memory that your OS gives each process is too little\n\
+   That's a system configuration issue that you'll need to discuss\n\
+   with the system administrator\n\
+");
 		exit(2);
 	}
 
@@ -906,7 +1068,10 @@ ReallocZ(
 
 	ptr = realloc(oldptr,nbytes);
 	if (ptr == NULL) {
-		fprintf(stderr,"Realloc failed, fatal\n");
+		fprintf(stderr,
+			"Realloc failed (%d bytes --> %d bytes), fatal\n",
+			obytes, nbytes);
+		perror("realloc");
 		exit(2);
 	}
 	if (obytes < nbytes) {
@@ -935,49 +1100,45 @@ GrabOnly(
 	o_arg = opt;
     } else {
 	/* it's in a file */
-	FILE *f;
-	char *filename=opt;
-	struct stat str_stat;
-	int filesize;
 
 	/* open the file */
-	if ((f = fopen(filename,"r")) == NULL) {
-	    fprintf(stderr,"Open of '%s' failed\n", filename);
-	    perror(filename);
+	o_arg = FileToBuf(opt);
+
+	/* if that fails, it's a command line error */
+	if (o_arg == NULL) {
 	    Usage();
 	}
-
-	/* determine the file length */
-	if (fstat(fileno(f),&str_stat) != 0) {
-	    perror("fstat");
-	    exit(1);
-	}
-	filesize = str_stat.st_size;
-
-	/* make a big-enough buffer */
-	o_arg = MallocZ(filesize+1);
-
-	/* read the file into the buffer */
-	if (fread(o_arg,1,filesize,f) != filesize) {
-	    perror("fread");
-	    exit(1);
-	}
-
-	fclose(f);
     }
 
     /* wherever we got it, o_arg is a connection list */
     while (o_arg && *o_arg) {
-	int num;
+	int num1,num2;
 	
-	if (sscanf(o_arg,"%d",&num) != 1) {
+	if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
+	    /* process range */
+	    if (num2 <= num1) {
+		BadArg(argsource,
+		       "-oX-Y, must have X<Y, '%s'\n", o_arg);
+	    }
+	    if (debug)
+		printf("setting OnlyConn(%d-%d)\n", num1, num2);
+
+	    while (num1<=num2) {
+		if (debug > 1)
+		    printf("setting OnlyConn(%d)\n", num1);
+		OnlyConn(num1++);
+	    }
+	} else if (sscanf(o_arg,"%d",&num1) == 1) {
+	    /* single argument */
+	    if (debug)
+		printf("setting OnlyConn(%d)\n", num1);
+	    OnlyConn(num1);
+	} else {
+	    /* error */
 	    BadArg(argsource,
 		   "Don't understand conn number starting at '%s'\n", o_arg);
 	}
-	if (debug)
-	    printf("setting OnlyConn(%d)\n", num);
-	OnlyConn(num);
-
+		   
 	/* look for the next comma */
 	o_arg = strchr(o_arg,',');
 	if (o_arg)
@@ -995,6 +1156,9 @@ StringToArgv(
 {
     char **argv;
     int nargs = 0;
+
+    /* discard the original string, use a copy */
+    buf = strdup(buf);
 
     /* (very pessimistically) make the argv array */
     argv = malloc(sizeof(char *) * ((strlen(buf)/2)+1));
@@ -1044,49 +1208,86 @@ CheckArguments(
 {
     char *home;
     char *envariable;
+    char *rc_path = NULL;
+    char *rc_buf = NULL;
 
     /* remember the name of the program for errors... */
     progname = argv[0];
 
     /* first, we read from the config file, "~/.tcptracerc" */
     if ((home = getenv("HOME")) != NULL) {
-	char *path;
 	struct stat statbuf;
 
-	path = malloc(strlen(home)+strlen(TCPTRACE_RC_FILE)+2);
+	rc_path = malloc(strlen(home)+strlen(TCPTRACE_RC_FILE)+2);
 
-	sprintf(path, "%s/%s", home, TCPTRACE_RC_FILE);
+	sprintf(rc_path, "%s/%s", home, TCPTRACE_RC_FILE);
 	if (debug>1)
-	    printf("Looking for resource file '%s'\n", path);
+	    printf("Looking for resource file '%s'\n", rc_path);
 
-	if (stat(path,&statbuf) == 0) {
+	if (stat(rc_path,&statbuf) != 0) {
+	    rc_path = NULL;
+	} else {
 	    int argc;
 	    char **argv;
-	    FILE *f;
-	    char *buf = malloc(statbuf.st_size+1);
+	    char *pch_file;
+	    char *pch_new;
+	    char *file_buf;
 
 	    if (debug>1)
-		printf("resource file %s exists\n", path);
+		printf("resource file %s exists\n", rc_path);
 
-	    if ((f = fopen(path,"r")) != NULL) {
-		if (fread(buf,statbuf.st_size,1,f) != 1) {
-		    perror(path);
-		    exit(-1);
-		}
+	    /* read the file into a buffer */
+	    rc_buf = file_buf = FileToBuf(rc_path);
 
-		/* terminate the string */
-		buf[statbuf.st_size] = '\00';
-
-		if (debug)
-		    printf("resource file %s contains:\n\t'%s'\n",
-			   path, buf);
-
-		StringToArgv(buf,&argc,&argv);
-		ParseArgs(TCPTRACE_RC_FILE, &argc, argv);
-
-		fclose(f);
+	    /* if it exists but can't be read, that's a fatal error */
+	    if (rc_buf == NULL) {
+		fprintf(stderr,
+			"Couldn't read resource file '%s'\n", rc_path);
+		fprintf(stderr,
+			"(either make the file readable or change its name)\n");
+		exit(-1);
 	    }
-	    free(buf);
+	    
+
+	    /* make a new buffer to hold the converted string */
+	    pch_file = rc_buf;
+	    rc_buf = pch_new = MallocZ(strlen(file_buf)+3);
+
+	    /* loop until end of string */
+	    while (*pch_file) {
+		if (*pch_file == '\n') {
+		    /* turn newlines into spaces */
+		    *pch_new++ = ' ';
+		    ++pch_file;
+		} else if (*pch_file == '#') {
+		    /* skip over the '#' */
+		    ++pch_file;
+
+		    /* remove comments (until NULL or newline) */
+		    while ((*pch_file != '\00') &&
+			   (*pch_file != '\n')) {
+			++pch_file;
+		    }
+		    /* insert a space */
+		    *pch_new++ = ' ';
+		} else {
+		    /* just copy the characters */
+		    *pch_new++ = *pch_file++;
+		}
+	    }
+
+	    /* append a NULL to pch_new */
+	    *pch_new = '\00';
+
+	    if (debug>2)
+		printf("Resource file string: '%s'\n", rc_buf);
+
+	    /* we're finished with the original buffer, but need to keep pch_new */
+	    free(file_buf);
+
+	    /* parse those args */
+	    StringToArgv(rc_buf,&argc,&argv);
+	    ParseArgs(TCPTRACE_RC_FILE, &argc, argv);
 	}
     }
 
@@ -1111,7 +1312,121 @@ CheckArguments(
 	BadArg(NULL,"must specify at least one file name\n");
     }
 
+    /* if debugging is on, tell what was in the ENV and rc file */
+    if (debug) {
+	if (rc_path)
+	    printf("Flags from %s: '%s'\n", rc_path, rc_buf);
+	if (envariable)
+	    printf("envariable %s contains: '%s'\n",
+		   TCPTRACE_ENVARIABLE, envariable);
+    }
+
+    if (rc_buf)
+	free(rc_buf);
+
+    /* heuristic, I set "-t" in my config file, but they don't work inside */
+    /* emacs shell windows, which is a pain.  If the terminal looks like EMACS, */
+    /* then turn OFF ticks! */
+    if (printticks) {
+	char *TERM = getenv("TERM");
+	/* allow emacs and Emacs */
+	if ((TERM != NULL) && 
+	    ((strstr(TERM,"emacs") != NULL) ||
+	     (strstr(TERM,"Emacs") != NULL))) {
+	    printf("Disabling ticks for EMACS shell window\n");
+	    printticks = 0;
+	}
+    }
 }
+
+
+
+
+/* these extended boolean options are table driven, to make it easier to add more
+   later without messing them up */
+static void
+ParseExtendedArg(
+    char *argsource,
+    char *arg)
+{
+    int i;
+    struct ext_bool_op *pbop_found = NULL;
+    struct ext_bool_op *pbop_prefix = NULL;
+    Bool prefix_ambig = FALSE;
+    Bool negative_arg_prefix;
+    char *argtext;
+    int arglen;
+
+    /* there must be at least SOME text there */
+    if ((strcmp(arg,"--") == 0) || (strcmp(arg,"--no") == 0))
+	BadArg(argsource, "Void extended argument\n");
+
+    /* find just the arg text */
+    if (strncmp(arg,"--no",4) == 0) {
+	argtext = arg+4;
+	negative_arg_prefix = TRUE;
+    } else {
+	argtext = arg+2;
+	negative_arg_prefix = FALSE;
+    }
+    arglen = strlen(argtext);
+
+
+    /* search for a match on each extended arg */
+    for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
+	struct ext_bool_op *pbop = &extended_bools[i];
+
+	/* check for the default value flag */
+	if (strcmp(argtext,pbop->bool_optname) == 0) {
+	    pbop_found = pbop;
+	    break;
+	}
+
+	/* check for a prefix match */
+	if (strncmp(argtext,pbop->bool_optname,arglen) == 0) {
+	    if (pbop_prefix == NULL)
+		pbop_prefix = pbop;
+	    else
+		prefix_ambig = TRUE;
+	}
+    }
+
+
+    /* if we never found a match, it's an error */
+    if ((pbop_found == NULL) && (pbop_prefix == NULL)) {
+	BadArg(argsource, "Bad extended argument '%s' (see -hargs)\n", arg);
+	return;
+    }
+
+    /* if the prefix is UNambiguous, that's good enough */
+    if ((pbop_prefix != NULL) && (!prefix_ambig))
+	pbop_found = pbop_prefix;
+
+    /* either exact match or good prefix, do it */
+    if (pbop_found != NULL) {
+	if (negative_arg_prefix)
+	    *pbop_found->bool_popt = !pbop_found->bool_default;
+	else
+	    *pbop_found->bool_popt = pbop_found->bool_default;
+	return;
+    }
+
+    /* ... else ambiguous prefix */
+    fprintf(stderr,"Extended arg '%s' is ambiguous, it matches:\n", arg);
+    for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
+	struct ext_bool_op *pbop = &extended_bools[i];
+	if (strncmp(argtext,pbop->bool_optname,arglen) == 0)
+	    fprintf(stderr,"  %s%s - %s%s\n",
+		    negative_arg_prefix?"no":"",
+		    pbop->bool_optname,
+		    negative_arg_prefix?"DON'T ":"",
+		    pbop->bool_descr);
+    }
+    BadArg(argsource, "Ambiguous extended argument '%s'\n", arg);
+    
+    return;
+}
+
 
 
 static void
@@ -1129,6 +1444,11 @@ ParseArgs(
 	if (argv[i] == NULL)
 	    continue;
 
+	if (strncmp(argv[i],"--",2) == 0) {
+	    ParseExtendedArg(argsource, argv[i]);
+	    continue;
+	}
+
 	if (*argv[i] == '-') {
 	    if (argv[i][1] == '\00') /* just a '-' */
 		Usage();
@@ -1136,17 +1456,30 @@ ParseArgs(
 	    while (*(++argv[i]))
 		switch (*argv[i]) {
 		  case 'A':
-		    thru_interval = atoi(argv[i]+1);
+		    if (isdigit((int)(*(argv[i]+1))))
+			thru_interval = atoi(argv[i]+1);
+		    else
+			BadArg(argsource, "-A  number missing\n");
 		    if (thru_interval <= 0)
 			BadArg(argsource, "-A  must be > 1\n");
 		    *(argv[i]+1) = '\00'; break;
 		  case 'B':
-		    beginpnum = atoi(argv[i]+1);
+		    if (isdigit((int)(*(argv[i]+1))))
+			beginpnum = atoi(argv[i]+1);
+		    else
+			BadArg(argsource, "-B  number missing\n");
+		    if (beginpnum < 0)
+			BadArg(argsource, "-B  must be >= 0\n");
 		    *(argv[i]+1) = '\00'; break;
 		  case 'C': colorplot = TRUE; break;
 		  case 'D': hex = FALSE; break;
 		  case 'E':
-		    endpnum = atoi(argv[i]+1);
+		    if (isdigit((int)(*(argv[i]+1))))
+			endpnum = atoi(argv[i]+1);
+		    else
+			BadArg(argsource, "-E  number missing\n");
+		    if (beginpnum < 0)
+			BadArg(argsource, "-E  must be >= 0\n");
 		    *(argv[i]+1) = '\00'; break;
 		  case 'F': graph_segsize = TRUE; break;
 		  case 'G':
@@ -1191,16 +1524,27 @@ ParseArgs(
 		    }
 		    break;
 		  case 'h': Help(argv[i]+1); *(argv[i]+1) = '\00'; break;
-		  case 'i':
-		    ++saw_i_or_o;
-		    IgnoreConn(atoi(argv[i]+1));
-		    *(argv[i]+1) = '\00'; break;
+		  case 'i': {
+		      int conn = -1;
+		      if (isdigit((int)(*(argv[i]+1))))
+			  conn = atoi(argv[i]+1);
+		      else
+			  BadArg(argsource, "-i  number missing\n");
+		      if (conn < 0)
+			  BadArg(argsource, "-i  must be >= 0\n");
+		      ++saw_i_or_o;
+		      IgnoreConn(conn);
+		      *(argv[i]+1) = '\00'; 
+		  } break;
 		  case 'l': printbrief = FALSE; break;
 		  case 'm':
 		    BadArg(argsource,
 			   "-m option is obsolete (no longer necessary)\n");
 		    *(argv[i]+1) = '\00'; break;
-		  case 'n': nonames = TRUE; break;
+		  case 'n':
+		    resolve_ipaddresses = FALSE;
+		    resolve_ports = FALSE;
+		    break;
 		  case 'o':
 		    ++saw_i_or_o;
 		    GrabOnly(argsource,argv[i]+1);
@@ -1216,6 +1560,8 @@ ParseArgs(
 		    warn_printtrunc = TRUE;
 		    warn_printbadmbz = TRUE;
 		    warn_printhwdups = TRUE;
+		    warn_printbadcsum = TRUE;
+		    warn_printbad_syn_fin_seq = TRUE;
 		    warn_ooo = TRUE;
 		    break;
 		  case 'x':
@@ -1268,7 +1614,10 @@ ParseArgs(
 		  case 'c': ignore_non_comp = !TRUE; break;
 		  case 'e': save_tcp_data = FALSE; break;
 		  case 'l': printbrief = !FALSE; break;
-		  case 'n': nonames = !TRUE; break;
+		  case 'n':
+		    resolve_ipaddresses = !FALSE;
+		    resolve_ports = !FALSE;
+		    break;
 		  case 'p': printallofem = !TRUE; break;
 		  case 'q': printsuppress = !TRUE; break;
 		  case 'r': print_rtt = !TRUE; break;
@@ -1279,6 +1628,7 @@ ParseArgs(
 		    warn_printtrunc = !TRUE;
 		    warn_printbadmbz = !TRUE;
 		    warn_printhwdups = !TRUE;
+		    warn_printbadcsum = !TRUE;
 		    warn_ooo = !TRUE;
 		    break;
 		  case 'y': plot_tput_instant = !plot_tput_instant; break;
@@ -1317,35 +1667,38 @@ ParseArgs(
 static void
 DumpFlags(void)
 {
-	fprintf(stderr,"printbrief:       %d\n", printbrief);
-	fprintf(stderr,"printsuppress:    %d\n", printsuppress);
-	fprintf(stderr,"warn_printtrunc:  %d\n", warn_printtrunc);
-	fprintf(stderr,"warn_printbadmbz: %d\n", warn_printbadmbz);
-	fprintf(stderr,"warn_printhwdups: %d\n", warn_printhwdups);
-	fprintf(stderr,"print_rtt:        %d\n", print_rtt);
-	fprintf(stderr,"graph tsg:        %d\n", graph_tsg);
-	fprintf(stderr,"graph rtt:        %d\n", graph_rtt);
-	fprintf(stderr,"graph tput:       %d\n", graph_tput);
-	fprintf(stderr,"plotem:           %s\n",
-	        colorplot?"(color)":"(b/w)");
-	fprintf(stderr,"hex printing:     %d\n", hex);
-	fprintf(stderr,"ignore_non_comp:  %d\n", ignore_non_comp);
-	fprintf(stderr,"printem:          %d\n", printem);
-	fprintf(stderr,"printallofem:     %d\n", printallofem);
-	fprintf(stderr,"printticks:       %d\n", printticks);
-	fprintf(stderr,"no names:         %d\n", nonames);
-	fprintf(stderr,"use_short_names:  %d\n", use_short_names);
-	fprintf(stderr,"show_rexmit:      %d\n", show_rexmit);
-	fprintf(stderr,"show_zero_window: %d\n", show_zero_window);
-	fprintf(stderr,"show_out_order:	  %d\n", show_out_order);
-	fprintf(stderr,"save_tcp_data:    %d\n", save_tcp_data);
-	fprintf(stderr,"graph_time_zero:  %d\n", graph_time_zero);
-	fprintf(stderr,"graph_seq_zero:   %d\n", graph_seq_zero);
-	fprintf(stderr,"beginning pnum:   %lu\n", beginpnum);
-	fprintf(stderr,"ending pnum:      %lu\n", endpnum);
-	fprintf(stderr,"throughput intvl: %d\n", thru_interval);
-	fprintf(stderr,"number modules:   %d\n", NUM_MODULES);
-	fprintf(stderr,"debug:            %d\n", debug);
+    int i;
+
+    fprintf(stderr,"printbrief:       %s\n", BOOL2STR(printbrief));
+    fprintf(stderr,"printsuppress:    %s\n", BOOL2STR(printsuppress));
+    fprintf(stderr,"print_rtt:        %s\n", BOOL2STR(print_rtt));
+    fprintf(stderr,"graph tsg:        %s\n", BOOL2STR(graph_tsg));
+    fprintf(stderr,"graph rtt:        %s\n", BOOL2STR(graph_rtt));
+    fprintf(stderr,"graph tput:       %s\n", BOOL2STR(graph_tput));
+    fprintf(stderr,"plotem:           %s\n",
+	    colorplot?"(color)":"(b/w)");
+    fprintf(stderr,"hex printing:     %s\n", BOOL2STR(hex));
+    fprintf(stderr,"ignore_non_comp:  %s\n", BOOL2STR(ignore_non_comp));
+    fprintf(stderr,"printem:          %s\n", BOOL2STR(printem));
+    fprintf(stderr,"printallofem:     %s\n", BOOL2STR(printallofem));
+    fprintf(stderr,"printticks:       %s\n", BOOL2STR(printticks));
+    fprintf(stderr,"use_short_names:  %s\n", BOOL2STR(use_short_names));
+    fprintf(stderr,"save_tcp_data:    %s\n", BOOL2STR(save_tcp_data));
+    fprintf(stderr,"graph_time_zero:  %s\n", BOOL2STR(graph_time_zero));
+    fprintf(stderr,"graph_seq_zero:   %s\n", BOOL2STR(graph_seq_zero));
+    fprintf(stderr,"beginning pnum:   %lu\n", beginpnum);
+    fprintf(stderr,"ending pnum:      %lu\n", endpnum);
+    fprintf(stderr,"throughput intvl: %d\n", thru_interval);
+    fprintf(stderr,"number modules:   %d\n", NUM_MODULES);
+    fprintf(stderr,"debug:            %s\n", BOOL2STR(debug));
+
+    /* print out the stuff controlled by the extended args */
+    for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
+	struct ext_bool_op *pbop = &extended_bools[i];
+	char buf[100];
+	sprintf(buf,"%s:", pbop->bool_optname);
+	fprintf(stderr,"%-18s%s\n", buf, BOOL2STR(*pbop->bool_popt));
+    }
 }
 
 
@@ -1571,5 +1924,55 @@ MemCpy(void *vp1, void *vp2, size_t n)
 	*p1++=*p2++;
 
     return(vp1);
+}
+
+
+/* read from a file, store contents into NULL-terminated string */
+/* memory returned must be "free"ed to be reclaimed */
+static char *
+FileToBuf(
+    char *filename)
+{
+    FILE *f;
+    struct stat str_stat;
+    int filesize;
+    char *buffer;
+
+    /* open the file */
+    if ((f = fopen(filename,"r")) == NULL) {
+	fprintf(stderr,"Open of '%s' failed\n", filename);
+	perror(filename);
+	return(NULL);
+    }
+
+
+    /* determine the file length */
+    if (fstat(fileno(f),&str_stat) != 0) {
+	perror("fstat");
+	exit(1);
+    }
+    filesize = str_stat.st_size;
+
+    /* make a big-enough buffer */
+    buffer = MallocZ(filesize+2);  /* with room to NULL terminate */
+
+
+    /* read the file into the buffer */
+    if (fread(buffer,1,filesize,f) != filesize) {
+	perror("fread");
+	exit(1);
+    }
+
+    fclose(f);
+
+    /* put a NULL at the end */
+    buffer[filesize] = '\00';
+
+    if (debug > 1)
+	printf("Read %d characters from resource '%s': '%s'\n",
+	       filesize, filename, buffer);
+
+    /* somebody else will "free" it */
+    return(buffer);
 }
 

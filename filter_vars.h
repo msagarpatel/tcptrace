@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,8 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
+static char const rcsid_filter_vars[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/filter_vars.h,v 5.6 1999/02/25 15:01:37 sdo Exp $";
 
 
 /* just a big table of things that we can filter on */
@@ -42,10 +44,12 @@ struct filter_line filters[] = {
     {"f1323_ts",	V_BOOL,	PTCB_C_S(f1323_ts),"1323 time stampts requested"},
     {"fsack_req",	V_BOOL,	PTCB_C_S(fsack_req),"SACKs requested"},
     {"window_scale",	V_BOOL,	PTCB_C_S(window_scale),"window scale factor"},
+    {"bad_behavior",	V_BOOL,	PTCB_C_S(bad_behavior),"bad TCP behavior"},
 
     {"data_bytes",	V_ULLONG, PTCB_C_S(data_bytes),"bytes of data"},
     {"data_segs",	V_ULLONG, PTCB_C_S(data_pkts),"segments of data"},
     {"data_segs_push",	V_ULLONG, PTCB_C_S(data_pkts_push),"segments with PUSH set"},
+    {"unique_bytes",	V_ULLONG, PTCB_C_S(unique_bytes),"non-retransmitted bytes"},
     {"rexmit_bytes",	V_ULLONG, PTCB_C_S(rexmit_bytes),"retransmitted bytes"},
     {"rexmit_segs",	V_ULLONG, PTCB_C_S(rexmit_pkts),"segments w/ retransmitted data"},
     {"ack_segs",	V_ULLONG, PTCB_C_S(ack_pkts),"segments containing ACK"},
@@ -55,7 +59,11 @@ struct filter_line filters[] = {
     {"win_zero_ct",	V_ULONG,  PTCB_C_S(win_zero_ct),"number of ZERO windows advertised"},
     {"min_seq",		V_ULONG,  PTCB_C_S(min_seq),"smallest sequence number"},
     {"max_seq",		V_ULONG,  PTCB_C_S(max_seq),"largest sequence number"},
+
+    /* synonyms */
     {"segs",		V_ULLONG, PTCB_C_S(packets),"total segments"},
+    {"packets",		V_ULLONG, PTCB_C_S(packets),"total segments"},
+
     {"syn_count",	V_UCHAR,  PTCB_C_S(syn_count),"SYNs sent"},
     {"fin_count",	V_UCHAR,  PTCB_C_S(fin_count),"FINs sent"},
     {"reset_count",	V_UCHAR,  PTCB_C_S(reset_count),"RESETs sent"},
@@ -64,7 +72,7 @@ struct filter_line filters[] = {
     {"out_order_segs",	V_ULLONG, PTCB_C_S(out_order_pkts),"out of order segments"},
     {"sacks_sent",	V_ULLONG, PTCB_C_S(sacks_sent),"SACKs sent"},
     {"ipv6_segs",	V_ULONG,  PTCB_C_S(ipv6_segments),"number of IPv6 segments sent"},
-    {"max_idle",	V_ULONG,  PTCB_C_S(idle_max),"maximum idle time (usecs)"},
+    {"max_idle",	V_ULLONG, PTCB_C_S(idle_max),"maximum idle time (usecs)"},
 
     {"num_hw_dups",     V_ULONG,  PTCB_C_S(num_hardware_dups),"number of hardware-level duplicates"},
 
@@ -93,9 +101,14 @@ struct filter_line filters[] = {
     {"trunc_bytes",	V_ULLONG, PTCB_C_S(trunc_bytes), "number of bytes not in the file"},
     {"trunc_segs", 	V_ULLONG, PTCB_C_S(trunc_segs), "number of segments not in the file"},
 
+    /* HOST IP addresses */
+    {"hostaddr",	V_IPADDR,
+     PTP(addr_pair.a_address, addr_pair.b_address),
+     "IP Address (v4 or v6 in standard textual notation"},
+
     /* computed functions */
 
     /* throughput in bytes/second - 0 for infinite or none */
-    {"thruput",		V_UFUNC, &VFuncClntTput, &VFuncServTput, "thruput (bytes/sec)"},
+    {"thruput",		V_UFUNC, (void *)&VFuncClntTput, (void *)&VFuncServTput, "thruput (bytes/sec)"},
 };
 #define NUM_FILTERS (sizeof(filters)/sizeof(struct filter_line))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
  *	Ohio University.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "$Id: compress.c,v 1.11 1998/09/30 22:58:30 sdo Exp $";
+    "$Header: /home/sdo/src/tcptrace/src/RCS/compress.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -254,7 +254,7 @@ CompSaveHeader(
 
 #ifdef HAVE_MKSTEMP
     {
-	/* From Mallman, support to be "safer" */
+	/* From Mallman, supposed to be "safer" */
 	int fd;
 	extern int mkstemp(char *template);
 
@@ -386,7 +386,7 @@ CompOpenPipe(
     }
 		      
 
-    if (pipe(fdpipe) == -1) {
+    if (Mfpipe(fdpipe) == -1) {
 	perror("pipe");
 	exit(-1);
     }
@@ -510,7 +510,7 @@ PipeHelper(void)
     /*   stdin: 	has the header file open */
     /*   f_stdin_file:	holds the rest of the stream */
 
-    if (pipe(fdpipe) == -1) {
+    if (Mfpipe(fdpipe) == -1) {
 	perror("pipe");
 	exit(-1);
     }
