@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/output.c,v 3.14 1997/07/16 15:40:21 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/output.c,v 3.15 1997/08/22 20:17:53 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -324,6 +324,30 @@ PrintTrace(
 	StatLineF("throughput","Bps","%8.0f",
 		  (double) (pab->data_bytes-pab->rexmit_bytes) / etime,
 		  (double) (pba->data_bytes-pba->rexmit_bytes) / etime);
+
+    /* compare to theoretical length of the stream (not just what
+       we saw) using the SYN and FIN
+       (N.B. not taking wrapped seq space into account) */
+    if ((pab->syn_count > 0) && (pab->fin_count > 0) &&
+	(pba->syn_count > 0) && (pba->fin_count > 0)) {
+	StatLineI("ttl stream length","bytes","%8lu",
+		  pab->fin-pab->syn-1,
+		  pba->fin-pba->syn-1);
+	StatLineI("missed data","bytes","%8lu",
+		  pab->fin-pab->syn-1-(pab->data_bytes-pab->rexmit_bytes),
+		  pba->fin-pba->syn-1-(pba->data_bytes-pba->rexmit_bytes));
+    } else {
+	StatLineI("ttl stream length","","%s",(int)"NA",(int)"NA");
+	StatLineI("missed data","","%s",(int)"NA",(int)"NA");
+    }
+
+    /* if we saved the contents, tell how much is missing */
+    if (save_tcp_data) {
+	StatLineI("truncated data","bytes","%8lu",
+		  pab->trunc_bytes, pba->trunc_bytes);
+	StatLineI("truncated packets","pkts","%8lu",
+		  pab->trunc_segs, pba->trunc_segs);
+    }
 
     if (print_rtt) {
 	fprintf(stdout,"\n");

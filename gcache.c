@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/gcache.c,v 3.3 1996/08/16 21:15:36 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/gcache.c,v 3.4 1997/08/14 19:20:13 sdo Exp $";
 
 
 /*
@@ -39,6 +39,11 @@ static char const rcsid[] =
 #include <sys/types.h>
 #include "tcptrace.h"
 #include "gcache.h"
+
+
+/* Let's use ANSI C rather than old BSD calls... */
+#define bzero(ptr,nbytes) memset(ptr,0,nbytes)
+#define bcopy(from_ptr,to_ptr,nbytes) memcpy(to_ptr,from_ptr,nbytes)
 
 
 

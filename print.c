@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.10 1997/07/24 21:11:47 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.11 1997/08/22 20:16:15 sdo Exp $";
 
 
 /* 
@@ -173,6 +173,12 @@ printtcp_packet(
     printf("\t     WIN: %u\n", ntohs(ptcp->th_win));
     printf("\t    HLEN: %u\n", ptcp->th_off*4);
     pdata = (u_char *)ptcp + ptcp->th_off*4;
+    printf("\t    DLEN: %u",
+	   tcp_data_length);
+    if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
+	printf(" (only %ld bytes in dump file)\n",
+	       (u_long)plast - (u_long)pdata + 1);
+    printf("\n");
     if (ptcp->th_off != 5) {
 	struct tcp_options *ptcpo;
 

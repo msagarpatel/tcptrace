@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.12 1997/07/24 21:34:10 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.13 1997/08/22 20:18:21 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -57,7 +57,8 @@ static int SameConn(tcp_pair_addrblock *, tcp_pair_addrblock *, int *);
 static tcp_pair *NewTTP(struct ip *, struct tcphdr *);
 static tcp_pair *FindTTP(struct ip *, struct tcphdr *, int *);
 static void MoreTcpPairs(int num_needed);
-
+static void ExtractContents(u_long seq, u_long tcp_data_bytes,
+			    u_long saved_data_bytes, void *pdata, tcb *ptcb);
 
 
 
@@ -508,13 +509,26 @@ dotrace(
     thisdir->max_seq = end;
 
   
+    /* save the stream contents, if requested */
+    if (save_tcp_data && (tcp_data_length > 0)) {
+	u_char *pdata = (u_char *)ptcp + ptcp->th_off*4;
+	u_long saved;
+	saved = tcp_data_length;
+	if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
+	    saved = (u_long)plast - (u_long)pdata + 1;
+	ExtractContents(start,tcp_data_length,saved,pdata,thisdir);
+    }
+
     /* record sequence limits */
     if (SYN_SET(ptcp)) {
 	thisdir->syn = start;
 	otherdir->ack = start;  /* bug fix for Rob Austein <sra@epilogue.com> */
     }
-    if (FIN_SET(ptcp))
-	thisdir->fin = start;
+    if (FIN_SET(ptcp)) {
+	/* bug fix, if there's data here too, we need to bump up the FIN */
+	/* (psc data file shows example) */
+	thisdir->fin = start + tcp_data_length;
+    }
 
     /* do rexmit stats */
     retrans = FALSE;
@@ -601,12 +615,19 @@ dotrace(
 
     /* check for RESET */
     if (RESET_SET(ptcp)) {
-	unsigned int ack = th_ack;
+	unsigned int plot_at;
+
+	/* if there's an ACK in this packet, plot it there */
+	/* otherwise, plot it at the last valid ACK we have */
+	if (ACK_SET(ptcp))
+	    plot_at = th_ack;
+	else
+	    plot_at = thisdir->ack;
 
 	if (to_tsgpl != NO_PLOTTER) {
 	    plotter_temp_color(to_tsgpl, text_color);
 	    plotter_text(to_tsgpl,
-			 current_time, ack,
+			 current_time, plot_at,
 			 "a", "RST_IN");
 	}
 	if (from_tsgpl != NO_PLOTTER) {
@@ -746,7 +767,9 @@ trace_done(void)
     }
 
     if (!printbrief)
-	fprintf(stdout,"%d connection(s) traced:\n", num_tcp_pairs + 1);
+	fprintf(stdout,"%d %s traced:\n",
+		num_tcp_pairs + 1,
+		num_tcp_pairs==0?"connection":"connections");
     fprintf(stdout,"%d packets seen, %d TCP packets traced\n",
 	    packet_count, trace_count);
     if (ctrunc > 0) {
@@ -1011,4 +1034,94 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
     }
 
     return(&tcpo);
+}
+
+
+
+static void
+ExtractContents(
+    u_long seq,
+    u_long tcp_data_bytes,
+    u_long saved_data_bytes,
+    void *pdata,
+    tcb *ptcb)
+{
+    u_long missing;
+    long offset;
+    u_long fptr;
+    static char filename[15];
+
+    if (saved_data_bytes == 0)
+	return;
+    
+    /* how many bytes do we have? */
+    missing = tcp_data_bytes - saved_data_bytes;
+    if (debug > 2)
+	fprintf(stderr,"ExtractContents: missing %ld bytes (%ld-%ld)\n",
+	       missing,tcp_data_bytes,saved_data_bytes);
+    if (missing > 0) {
+	ptcb->trunc_bytes += missing;
+	++ptcb->trunc_segs;
+    }
+
+    
+    /* if the FILE is "-1", couldn't open file */
+    if (ptcb->extracted_contents_file == (MFILE *) -1) {
+	return;
+    }
+
+    /* if the FILE is NULL, open file */
+    sprintf(filename,"%s2%s%s", ptcb->host_letter, ptcb->ptwin->host_letter,
+	    CONTENTS_FILE_EXTENSION);
+    if (ptcb->extracted_contents_file == (MFILE *) NULL) {
+	MFILE *f;
+
+	if ((f = Mfopen(filename,"w")) == NULL) {
+	    perror(filename);
+	    ptcb->extracted_contents_file = (MFILE *) -1;
+	}
+
+	if (debug)
+	    fprintf(stderr,"TCP contents file is '%s'\n", filename);
+
+	ptcb->extracted_contents_file = f;
+
+	/* beginning of the file is this sequence number */
+	ptcb->extr_lastseq = seq;
+	
+    }
+
+    /* see where we should start writing */
+    /* a little complicated, because we want to support really long files */
+    offset = SEQCMP(seq,ptcb->extr_lastseq);
+    
+
+    /* seek to the correct place in the file */
+    if (Mfseek(ptcb->extracted_contents_file, offset, SEEK_CUR) == -1) {
+	perror("fseek");
+	exit(-1);
+    }
+
+    /* see where we are */
+    fptr = Mftell(ptcb->extracted_contents_file);
+
+    if (debug)
+	fprintf(stderr,"Saving %ld bytes from stream '%s2%s' at offset %ld in file '%s'\n",
+		saved_data_bytes,
+		ptcb->host_letter, ptcb->ptwin->host_letter,
+		fptr, filename);
+
+    /* store the bytes */
+    if (Mfwrite(pdata,1,saved_data_bytes,ptcb->extracted_contents_file)
+	!= saved_data_bytes) {
+	perror("fwrite");
+	exit(-1);
+    }
+
+    /* go back to where we started to not confuse the next write */
+    ptcb->extr_lastseq = seq;
+    if (Mfseek(ptcb->extracted_contents_file, fptr, SEEK_SET) == -1) {
+	perror("fseek 2");
+	exit(-1);
+    }
 }

@@ -86,3 +86,16 @@
   Added plast into all packet reading routines to better check for the end
    of packets
   Added fix from Kacheong Poon for sack truncation problem
+
+4.0.4 - Wed Aug 13, 1997
+  Added some very minor patches to ease FreeBSD patch.  All you should need to do
+    now is change the Makefile for FreeBSD (thanks Bill Fenner)
+  Added hack by Mark Allman for http module
+  Added minor changes to support Linux compilation (mostly just left
+    the standard include files in a separate linux directory)
+4.1.0 - Fri Aug 22, 1997
+  Added support for reading compressed files (configurable, .gz and .Z by default)
+  Added option to save TCP stream data into files (-e)
+  Modified mod_http.c to support HTTP1.1 streams (ick)
+  Added help argument "-h" with several options for information
+    including docs for long format output
