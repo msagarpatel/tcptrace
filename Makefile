@@ -105,6 +105,7 @@ DEFINES += -DGROK_ETHERPEEK
 
 CC = gcc
 CCOPT = -O2 -Wall -Werror -g
+CCOPT = -O3 -Wall -Werror -g
 INCLS = -I.  ${PCAP_INCS}
 
 # Standard CFLAGS

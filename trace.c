@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.49 1998/10/16 20:43:13 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.52 1998/11/04 15:14:37 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -86,6 +86,10 @@ char *default_color	= "white";
 char *synfin_color	= "orange";
 char *push_color	= "white";	/* top arrow for PUSHed segments */
 
+/* ack diamond dongle colors */
+char *ackdongle_nosample_color	= "blue";
+char *ackdongle_ambig_color	= "red";
+
 
 /* return elapsed time in microseconds */
 /* (time2 - time1) */
@@ -105,6 +109,65 @@ elapsed(
     return((double)etime.tv_sec * 1000000 + (double)etime.tv_usec);
 }
 
+
+
+/* subtract the rhs from the lhs, result in lhs */
+void
+tv_sub(struct timeval *plhs, struct timeval rhs)
+{
+    /* sanity check, lhs MUST BE more than rhs */
+    if (tv_lt(*plhs,rhs)) {
+	fprintf(stderr,"tvsub(%s,", ts2ascii(plhs));
+	fprintf(stderr,"%s) bad timestamp order!\n", ts2ascii(&rhs));
+	exit(-1);
+    }
+    
+    if (plhs->tv_usec > rhs.tv_usec) {
+	plhs->tv_usec -= rhs.tv_usec;
+    } else if (plhs->tv_usec < rhs.tv_usec) {
+	plhs->tv_usec += US_PER_SEC - rhs.tv_usec;
+	plhs->tv_sec -= 1;
+    }
+    plhs->tv_sec -= rhs.tv_sec;
+}
+
+
+/* add the RHS to the LHS, answer in *plhs */
+void
+tv_add(struct timeval *plhs, struct timeval rhs)
+{
+    plhs->tv_sec += rhs.tv_sec;
+    plhs->tv_usec += rhs.tv_usec;
+
+    if (plhs->tv_usec >= US_PER_SEC) {
+	plhs->tv_usec -= US_PER_SEC;
+	plhs->tv_sec += 1;
+    }
+}
+
+
+/*  1: lhs >  rhs */
+/*  0: lhs == rhs */
+/* -1: lhs <  rhs */
+int
+tv_cmp(struct timeval lhs, struct timeval rhs)
+{
+    if (lhs.tv_sec > rhs.tv_sec) {
+	return(1);
+    }
+
+    if (lhs.tv_sec < rhs.tv_sec) {
+	return(-1);
+    }
+
+    /* ... else, seconds are the same */
+    if (lhs.tv_usec > rhs.tv_usec)
+	return(1);
+    else if (lhs.tv_usec == rhs.tv_usec)
+	return(0);
+    else
+	return(-1);
+}
 
 
 
@@ -336,17 +399,45 @@ FindTTP(
 	    /*    this packet has a SYN */
 	    /*    last conn saw both FINs and/or RSTs */
 	    /*    SYN sequence number outside last window (rfc 1122) */
+	    /*      (or less than initial Sequence, */
+	    /*       for wrap around trouble)  - Tue Nov  3, 1998*/
 	    /* if so, mark it INACTIVE and skip from now on */
+	    if (0 && SYN_SET(ptcp)) {
+		/* better keep this debugging around, it keeps breaking */
+		printf("elapsed: %f sec\n",
+		       elapsed(ptp->last_time,current_time)/1000000);
+		printf("SYN_SET: %d\n", SYN_SET(ptcp));
+		printf("a2b.fin_count: %d\n", ptp->a2b.fin_count);
+		printf("b2a.fin_count: %d\n", ptp->b2a.fin_count);
+		printf("a2b.reset_count: %d\n", ptp->a2b.reset_count);
+		printf("b2a.reset_count: %d\n", ptp->b2a.reset_count);
+		printf("dir: %d (%s)\n", dir, dir==A2B?"A2B":"B2A");
+		printf("seq:    %lu \n", ptcp->th_seq);
+		printf("winend: %lu \n",
+		       dir == A2B?ptp->b2a.windowend:ptp->a2b.windowend);
+		printf("syn:    %lu \n",
+		       dir == A2B?ptp->b2a.syn:ptp->a2b.syn);
+		printf("SEQ_GREATERTHAN winend: %d\n", dir == A2B?
+		       SEQ_GREATERTHAN(ptcp->th_seq,ptp->b2a.windowend):
+		       SEQ_GREATERTHAN(ptcp->th_seq,ptp->a2b.windowend));
+		printf("SEQ_LESSTHAN init syn: %d\n", dir == A2B?
+		       SEQ_LESSTHAN(ptcp->th_seq,ptp->a2b.syn):
+		       SEQ_LESSTHAN(ptcp->th_seq,ptp->b2a.syn));
+	    } 
+
 	    if ((elapsed(ptp->last_time,current_time)/1000000 > (4*60)) ||
 		((SYN_SET(ptcp)) && 
 		 (((ptp->a2b.fin_count >= 1) ||
 		   (ptp->b2a.fin_count >= 1)) ||
 		  ((ptp->a2b.reset_count >= 1) ||
 		   (ptp->b2a.reset_count >= 1))) &&
-		 (((dir == A2B) &&
-		   (ptcp->th_seq > ptp->a2b.windowend)) ||
-		  ((dir == B2A) &&
-		   (ptcp->th_seq > ptp->b2a.windowend))))) {
+		 (
+		     ((dir == A2B) && (
+			 SEQ_GREATERTHAN(ptcp->th_seq,ptp->b2a.windowend) ||
+			 SEQ_LESSTHAN(ptcp->th_seq,ptp->a2b.syn))) ||
+		     ((dir == B2A) && (
+			 SEQ_GREATERTHAN(ptcp->th_seq,ptp->a2b.windowend) ||
+			 SEQ_LESSTHAN(ptcp->th_seq,ptp->b2a.syn)))))) {
 		if (debug) {
 		    printf("%s: Marking 0x%08x %s<->%s INACTIVE (idle: %f sec)\n",
 			   ts2ascii(&current_time),
@@ -416,6 +507,7 @@ dotrace(
     tcp_seq	th_ack;		/* acknowledgement number */
     u_short	th_win;		/* window */
     short	ip_len;		/* total length */
+    enum t_ack	ack_type=NORMAL; /* how should we draw the ACK */
 
     /* make sure we have enough of the packet */
     if ((unsigned)ptcp + sizeof(struct tcphdr)-1 > (unsigned)plast) {
@@ -646,7 +738,7 @@ dotrace(
 
     /* do rtt stats */
     if (ACK_SET(ptcp)) {
-	ack_in(otherdir,th_ack);
+	ack_type = ack_in(otherdir,th_ack);
     }
 
 
@@ -821,8 +913,35 @@ dotrace(
 		plotter_line(to_tsgpl,
 			     current_time, SeqRep(otherdir,thisdir->ack),
 			     current_time, SeqRep(otherdir,ack));
+		/* draw dongles for "interesting" acks */
+		switch (ack_type) {
+		  case NORMAL:	/* normal case */
+		    /* no dongle */
+		    break;
+		  case CUMUL:	/* cumulative */
+		    /* won't happen, not plotted here */
+		    break;
+		  case TRIPLE:	/* triple dupacks */
+		    /* won't happen, not plotted here */
+		    break;
+		  case AMBIG:	/* ambiguous */
+		    plotter_temp_color(to_tsgpl, ackdongle_ambig_color);
+		    plotter_diamond(to_tsgpl, current_time,
+				    SeqRep(otherdir,ack));
+		    break;
+		  case NOSAMP:	/* acks retransmitted stuff cumulatively */
+		    plotter_temp_color(to_tsgpl, ackdongle_nosample_color);
+		    plotter_diamond(to_tsgpl, current_time,
+				    SeqRep(otherdir,ack));
+		    break;
+		}
 	    } else {
 		plotter_dtick(to_tsgpl, current_time, SeqRep(otherdir,ack));
+		if (ack_type == TRIPLE) {
+		    plotter_text(to_tsgpl, current_time,
+				 SeqRep(otherdir,ack),
+				 "a", "3");  /* '3' is for triple dupack */
+		}
 	    }
 	    plotter_perm_color(to_tsgpl, window_color);
 	    plotter_line(to_tsgpl,

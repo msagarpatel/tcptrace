@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/output.c,v 3.33 1998/08/14 19:21:34 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/output.c,v 3.34 1998/11/04 15:11:26 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -353,6 +353,8 @@ PrintTrace(
 		  Stdev(pab->rtt_sum, pab->rtt_sum2, pab->rtt_count) / 1000.0,
 		  Stdev(pba->rtt_sum, pba->rtt_sum2, pba->rtt_count) / 1000.0);
 
+	StatLineI("post-loss acks","",
+		  pab->rtt_nosample, pba->rtt_nosample);
 	if (pab->rtt_amback || pba->rtt_amback) {
 	    fprintf(stdout, "\
 \t  For the following 5 RTT statistics, only ACKs for\n\
@@ -380,6 +382,8 @@ PrintTrace(
 		  pab->rtt_cumack, pba->rtt_cumack);
 	StatLineI("duplicate acks","",
 		  pab->rtt_dupack, pba->rtt_dupack);
+	StatLineI("triple dupacks","",
+		  pab->rtt_triple_dupack, pba->rtt_triple_dupack);
 	if (debug)
 	    StatLineI("unknown acks:","",
 		      pab->rtt_unkack, pba->rtt_unkack);

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.12 1998/08/13 16:04:12 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/rexmit.c,v 3.14 1998/11/04 16:08:18 sdo Exp $";
 
 
 /* 
@@ -65,7 +65,7 @@ static quadrant *whichquad(seqspace *, seqnum);
 static quadrant *create_quadrant(void);
 static int addseg(tcb *, quadrant *, seglen, seqnum, Bool *);
 static void rtt_retrans(tcb *, segment *);
-static void rtt_ackin(tcb *, segment *);
+static enum t_ack rtt_ackin(tcb *, segment *, Bool rexmit);
 static void freequad(quadrant **);
 static void dump_rtt_sample(tcb *, segment *, double);
 static void graph_rtt_sample(tcb *, segment *, unsigned long);
@@ -325,6 +325,14 @@ collapse_quad(
 	if (pseg->acked && pseg->next->acked &&
 	    (pseg->seq_lastbyte+1 == pseg->next->seq_firstbyte)) {
 	    pseg->seq_lastbyte = pseg->next->seq_lastbyte;
+
+	    /* the new ACK count is the ACK count of the later segment */
+	    pseg->acked = pseg->next->acked;
+
+	    /* the new "transmit time" is the greater of the two */
+	    if (tv_gt(pseg->next->time,pseg->time))
+		pseg->time = pseg->next->time;
+
 	    tmpseg = pseg->next;
 	    pseg->next = pseg->next->next;
 	    if (pseg->next != NULL)
@@ -375,18 +383,28 @@ insert_seg_between(
 }
 
 
-
-static void
+static enum t_ack
 rtt_ackin(
     tcb *ptcb,
-    segment *pseg)
+    segment *pseg,
+    Bool rexmit_prev)
 {
     double etime_rtt;
+    enum t_ack ret;
 
     /* how long did it take */
     etime_rtt = elapsed(pseg->time,current_time);
 
-    if (pseg->retrans == 0) {
+    if (rexmit_prev) {
+	/* first, check for the situation in which the segment being ACKed */
+	/* was sent a while ago, and we've been piddling around */
+	/* retransmitting lost segments that came before it */
+	ptcb->rtt_last = 0.0;	/* don't use this sample, it's very long */
+	etime_rtt = 0.0;
+
+	++ptcb->rtt_nosample;  /* no sample, even though not ambig */
+	ret = NOSAMP;
+    } else if (pseg->retrans == 0) {
 	ptcb->rtt_last = etime_rtt;
 	if ((ptcb->rtt_min == 0) || (ptcb->rtt_min > etime_rtt))
 	    ptcb->rtt_min = etime_rtt;
@@ -397,9 +415,9 @@ rtt_ackin(
 	ptcb->rtt_sum += etime_rtt;
 	ptcb->rtt_sum2 += etime_rtt * etime_rtt;
 	++ptcb->rtt_count;
+	ret = NORMAL;
     } else {
 	/* retrans, can't use it */
-	ptcb->rtt_last = 0.0;
 	if ((ptcb->rtt_min_last == 0) || (ptcb->rtt_min_last > etime_rtt))
 	    ptcb->rtt_min_last = etime_rtt;
 
@@ -411,10 +429,16 @@ rtt_ackin(
 	++ptcb->rtt_count_last;
 
 	++ptcb->rtt_amback;  /* ambiguous ACK */
+
+	/* numbers not useful for plotting/dumping */
+	ptcb->rtt_last = 0.0;
+	etime_rtt = 0.0;
+
+	ret = AMBIG;
     }
 
     /* dump RTT samples, if asked */
-    if (dump_rtt) {
+    if (dump_rtt && (etime_rtt != 0.0)) {
 	dump_rtt_sample(ptcb,pseg,etime_rtt);
     }
 
@@ -422,6 +446,8 @@ rtt_ackin(
     if (graph_rtt && (pseg->retrans == 0)) {
 	graph_rtt_sample(ptcb,pseg,etime_rtt);
     }
+
+    return(ret);
 }
 
 
@@ -454,7 +480,7 @@ rtt_retrans(
 }
 
 
-void
+enum t_ack
 ack_in(
     tcb *ptcb,
     seqnum ack)
@@ -462,17 +488,23 @@ ack_in(
     quadrant *pquad;
     quadrant *pquad_prev;
     segment *pseg;
-    Bool changed_one;
+    Bool changed_one = FALSE;
+    Bool intervening_xmits = FALSE;
+    timeval last_xmit = {0,0};
+    enum t_ack ret = 0;
 
     /* check each segment in the segment list for the PREVIOUS quadrant */
     pquad = whichquad(ptcb->ss,ack);
     pquad_prev = pquad->prev;
-    changed_one = FALSE;
     for (pseg = pquad_prev->seglist_head; pseg != NULL; pseg = pseg->next) {
 	if (!pseg->acked) {
-	    pseg->acked = TRUE;
+	    ++pseg->acked;
 	    changed_one = TRUE;
 	    ++ptcb->rtt_cumack;
+
+	    /* keep track of the newest transmission */
+	    if (tv_gt(pseg->time,last_xmit))
+		last_xmit = pseg->time;
 	}
     }
     if (changed_one)
@@ -486,26 +518,44 @@ ack_in(
 	    break;
 	}
 
+	/* keep track of the newest transmission */
+	if (tv_gt(pseg->time,last_xmit))
+	    last_xmit = pseg->time;
+
 	/* (ELSE) ACK covers this sequence */
 	if (pseg->acked) {
-	    if (ack == (pseg->seq_lastbyte+1))
-		++ptcb->rtt_dupack; /* duplicate ack */
+	    /* already acked this one */
+	    ++pseg->acked;
+	    if (ack == (pseg->seq_lastbyte+1)) {
+		++ptcb->rtt_dupack; /* one more duplicate ack */
+		ret = CUMUL;
+		if (pseg->acked == 4) {
+		    ++ptcb->rtt_triple_dupack;
+		    ret = TRIPLE;
+		}
+	    }
 	    continue;
-	} /* ELSE !acked */
+	}
+	/* ELSE !acked */
 
-	pseg->acked = TRUE;
+	++pseg->acked;
 	changed_one = TRUE;
 
 	if (ack == (pseg->seq_lastbyte+1)) {
-	    /* specific ACK, we can get timings from this one */
-	    rtt_ackin(ptcb,pseg);
+	    /* if ANY preceding segment was xmitted after this one,
+	       the the RTT sample is invalid */
+	    intervening_xmits = (tv_gt(last_xmit,pseg->time));
+
+	    ret = rtt_ackin(ptcb,pseg,intervening_xmits);
 	} else {
 	    /* cumulatively ACKed */
 	    ++ptcb->rtt_cumack;
+	    ret = CUMUL;
 	}
     }
     if (changed_one)
 	collapse_quad(pquad);
+    return(ret);
 }
 
 
