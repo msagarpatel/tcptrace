@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_traffic[] =
-   "$Id: mod_traffic.c,v 1.11 1998/08/13 16:04:37 sdo Exp $";
+   "$Id: mod_traffic.c,v 1.14 1998/10/16 20:42:37 sdo Exp $";
 
 #ifdef LOAD_MODULE_TRAFFIC
 
@@ -59,6 +59,17 @@ struct traffic_info {
     u_long last_nopen;
     u_long ttlopen;
 
+    /* instantaneous open connections */
+    u_long n_i_open;
+    u_long last_n_i_open;
+    u_long ttl_i_open;
+    timeval iopen_last_time;
+
+    /* long-duration connections */
+    u_long nlong;
+    u_long last_nlong;
+    u_long ttllong;
+
     /* which color is used for plotting */
     char *color;
 
@@ -82,6 +93,7 @@ struct conn_info {
     Bool wasactive;		/* was this connection active over the interval? */
     Bool wasopen;		/* was this this connection EVER open? */
     Bool isopen;		/* is this connection open now? */
+    Bool islong;		/* is this a long-duration connection? */
     struct traffic_info *pti1;	/* pointer to the port info for this one */
     struct traffic_info *pti2;	/* pointer to the port info for this one */
     struct conn_info *next;	/* next in the chain */
@@ -99,14 +111,18 @@ static PLOTTER plotter_packets;
 static PLOTTER plotter_active;
 static PLOTTER plotter_open;
 static PLOTTER plotter_openclose;
+static PLOTTER plotter_i_open;
 static PLOTTER plotter_loss;
+static PLOTTER plotter_long;
 
 #define  PLOTTER_BYTES_FILENAME		"traffic_bytes.xpl"
 #define  PLOTTER_PACKETS_FILENAME	"traffic_packets.xpl"
 #define  PLOTTER_ACTIVE_FILENAME	"traffic_active.xpl"
 #define  PLOTTER_OPEN_FILENAME		"traffic_open.xpl"
 #define  PLOTTER_OPENCLOSE_FILENAME	"traffic_openclose.xpl"
+#define  PLOTTER_I_OPEN_FILENAME	"traffic_i_open.xpl"
 #define  PLOTTER_LOSS_FILENAME		"traffic_loss.xpl"
+#define  PLOTTER_LONG_FILENAME		"traffic_long.xpl"
 
 /* argument flags */
 static float age_interval = 15.0;  /* 15 seconds by default */
@@ -115,8 +131,10 @@ static Bool doplot_packets = FALSE;
 static Bool doplot_active = FALSE;
 static Bool doplot_open = FALSE;
 static Bool doplot_openclose = FALSE;
+static Bool doplot_i_open = FALSE;
 static Bool doplot_loss = FALSE;
-
+static Bool doplot_long = FALSE;
+static int longconn_duration = 60;
 
 
 /* local routines */
@@ -129,6 +147,7 @@ static void ExcludePorts(unsigned firstport, unsigned lastport);
 static void CheckPortNum(unsigned portnum);
 static char *PortName(int port);
 static void ParseArgs(char *argstring);
+static void DoplotIOpen(int port, Bool fopen);
 
 /* for other stats on connections */
 static int last_num_closes = 0;
@@ -257,6 +276,13 @@ traffic_init(
 			"open connections over time by port",
 			"time","open connections",
 			NULL);
+    if (doplot_i_open)
+	plotter_i_open =
+	    new_plotter(NULL,
+			PLOTTER_I_OPEN_FILENAME,
+			"open connections over time by port - instantaneous",
+			"time","number of connections",
+			NULL);
     if (doplot_openclose)
 	plotter_openclose =
 	    new_plotter(NULL,
@@ -271,6 +297,21 @@ traffic_init(
 			"packet loss per second over time",
 			"time","events/second",
 			NULL);
+
+    if (doplot_long) {
+	char title[100];
+	sprintf(title,"connections still open after %d seconds\n",
+		longconn_duration);
+	plotter_long =
+	    new_plotter(NULL,
+			PLOTTER_LONG_FILENAME,
+			title,
+			"time","number of connections",
+			NULL);
+    }
+
+    /* we don't want the normal output */
+    printsuppress = TRUE;
 
     /* init the graphs and etc... */
     AgeTraffic();
@@ -380,6 +421,13 @@ traffic_read(
 	    pci->isopen = 1;
 	    ++num_opens;
 	    ++open_conns;
+
+	    /* instantaneous opens and closes */
+	    if (doplot_i_open) {
+		DoplotIOpen(ptcp->th_dport, TRUE);
+		DoplotIOpen(ptcp->th_sport, TRUE);
+		DoplotIOpen(0, TRUE);
+	    }
 	}
     }
 
@@ -403,6 +451,13 @@ traffic_read(
 	    pci->isopen = 0;
 	    ++num_closes;
 	    --open_conns;
+
+	    /* instantaneous opens and closes */
+	    if (doplot_i_open) {
+		DoplotIOpen(ptcp->th_dport, FALSE);
+		DoplotIOpen(ptcp->th_sport, FALSE);
+		DoplotIOpen(0, FALSE);
+	    }
 	}
     }
 
@@ -414,6 +469,14 @@ traffic_read(
     if (pci->last_rexmits != ptp->a2b.rexmit_pkts+ptp->b2a.rexmit_pkts) {
 	pci->last_rexmits = ptp->a2b.rexmit_pkts+ptp->b2a.rexmit_pkts;
 	++rexmits;
+    }
+
+    /* see if this is now "long duration" */
+    if (!pci->islong) {
+	int etime_msecs = elapsed(ptp->first_time,current_time);
+	if (etime_msecs/1000000 > longconn_duration) {
+	    pci->islong = 1;
+	}
     }
 
 
@@ -461,7 +524,7 @@ AgeTraffic(void)
     if (etime == 0.0)
 	return;
 
-    /* roll the open/active connections into the port records */
+    /* roll the open/active/long connections into the port records */
     for (pci=connhead; pci; pci=pci->next) {
 	if (pci->wasactive) {
 	    if (pci->pti1)
@@ -477,6 +540,13 @@ AgeTraffic(void)
 	    if (pci->pti2)
 		++pci->pti2->nopen;
 	    ++ports[0]->nopen;
+	    if (pci->islong) {
+		if (pci->pti1)
+		    ++pci->pti1->nlong;
+		if (pci->pti2)
+		    ++pci->pti2->nlong;
+		++ports[0]->nlong;
+	    }
 	}
     }
     
@@ -583,7 +653,6 @@ AgeTraffic(void)
 
 	/* plot bytes */
 	if (doplot_bytes) {
-
 	    ups = (int)((float)pti->nbytes * 1000000.0 / etime);
 	    plotter_perm_color(plotter_bytes, pti->color);
 	    if (!pti->labelled || ((ups > 0) && (pti->last_nbytes == 0)))
@@ -636,6 +705,20 @@ AgeTraffic(void)
 	    pti->last_nopen = pti->nopen;
 	}
 
+	/* plot long-duration */
+	if (doplot_long) {
+	    ups = pti->nlong;
+	    plotter_perm_color(plotter_long, pti->color);
+	    if (!pti->labelled || ((ups > 0) && (pti->last_nlong == 0)))
+		plotter_text(plotter_long, current_time, ups,
+			     "l", PortName(pti->port));
+	    plotter_dot(plotter_long, current_time, ups);
+	    if (!ZERO_TIME(&last_time))
+		plotter_line(plotter_long,
+			     current_time, ups, last_time, pti->last_nlong);
+	    pti->last_nlong = ups;
+	}
+
 	/* OK, we must have done the left hand label by now */
 	pti->labelled = 1;
     }
@@ -646,6 +729,7 @@ AgeTraffic(void)
 	pti->ttlpackets += pti->npackets;
 
 	pti->nbytes = 0;
+	pti->nlong = 0;
 	pti->npackets = 0;
 	pti->nactive = 0;
 	pti->nopen = 0;
@@ -728,10 +812,13 @@ traffic_usage(void)
 \t       -G           generate all graphs\n\
 \t       -A           generate the 'active connections' graph\n\
 \t       -B           generate the 'bytes per second' graph\n\
+\t       -C           generate the 'opens and closes' graph\n\
 \t       -L           generate the 'losses per second' graph\n\
 \t       -O           generate the 'open connections' graph\n\
-\t       -C           generate the 'opens and closes' graph\n\
+\t       -I           generate the 'instantaneous open connections' graph\n\
 \t       -P           generate the 'packets per second' graph\n\
+\t       -D[SECS]     generate the 'long duration connection' graph\n\
+\t		      default definition of 'long' is 60 seconds\n\
 \t       -d           enable local debugging in this module\n\
 \t     Examples\n\
 \t       -xtraffic\" -p23\"            only port 23\n\
@@ -762,7 +849,7 @@ ParseArgs(char *argstring)
     for (i=1; i < argc; ++i) {
 	float interval;
 	if (debug > 1)
-	    printf("Checking argv[%d]:%s\n", i, argv[i]);
+	    printf("Checking argv[%d]: '%s'\n", i, argv[i]);
 	if (strcmp(argv[i],"-d") == 0) {
 	    debug = 1;
 	} else if (sscanf(argv[i],"-i%f", &interval) == 1) {
@@ -774,8 +861,10 @@ ParseArgs(char *argstring)
 	    doplot_active = TRUE;
 	    doplot_bytes = TRUE;
 	    doplot_loss = TRUE;
+	    doplot_long = TRUE;
 	    doplot_open = TRUE;
 	    doplot_openclose = TRUE;
+	    doplot_i_open = TRUE;
 	    doplot_packets = TRUE;
 	    if (debug)
 		fprintf(stderr,
@@ -798,6 +887,23 @@ ParseArgs(char *argstring)
 		fprintf(stderr,
 			"mod_traffic: generating 'loss' graph into '%s'\n",
 			PLOTTER_LOSS_FILENAME);
+	} else if (strncmp(argv[i],"-D",2) == 0) {
+	    doplot_long = TRUE;
+	    if (strlen(argv[i]) > 2) {
+		/* grab the number */
+		longconn_duration = atoi(argv[i]+2);
+		if (longconn_duration <= 0) {
+		    fprintf(stderr,"bad time value for -LN '%s'\n",
+			    argv[i]);
+		    exit(-1);
+		}
+
+	    }
+	    if (debug)
+		fprintf(stderr,
+			"mod_traffic: generating 'long duration' graph (%d secs) into '%s'\n",
+			longconn_duration,
+			PLOTTER_LONG_FILENAME);
 	} else if (strcmp(argv[i],"-O") == 0) {
 	    doplot_open = TRUE;
 	    if (debug)
@@ -810,6 +916,12 @@ ParseArgs(char *argstring)
 		fprintf(stderr,
 			"mod_traffic: generating 'openclose' graph into '%s'\n",
 			PLOTTER_OPENCLOSE_FILENAME);
+	} else if (strcmp(argv[i],"-I") == 0) {
+	    doplot_i_open = TRUE;
+	    if (debug)
+		fprintf(stderr,
+			"mod_traffic: generating 'instantaneous openclose' graph into '%s'\n",
+			PLOTTER_I_OPEN_FILENAME);
 	} else if (strcmp(argv[i],"-P") == 0) {
 	    doplot_packets = TRUE;
 	    if (debug)
@@ -854,6 +966,44 @@ ParseArgs(char *argstring)
 	    exit(-1);
 	}
     }
+}
+
+static void
+DoplotIOpen(int port, Bool fopen)
+{
+    struct traffic_info *pti;
+    char *color;
+
+    /* just for this port */
+    if ((pti = FindPort(port)) == NULL)
+	return;
+
+    color = pti->color;
+
+    if (fopen)
+	++pti->n_i_open;
+    else
+	--pti->n_i_open;
+
+    plotter_perm_color(plotter_i_open, color);
+    plotter_dot(plotter_i_open, current_time, pti->n_i_open);
+    if (!ZERO_TIME(&pti->iopen_last_time))
+	plotter_line(plotter_i_open,
+		     current_time, pti->n_i_open,
+		     pti->iopen_last_time, pti->last_n_i_open);
+    
+    pti->last_n_i_open = pti->n_i_open ;
+
+
+    /* insert labels */
+    if (ZERO_TIME(&pti->iopen_last_time)) {
+	    plotter_temp_color(plotter_i_open, color);
+	    plotter_text(plotter_i_open, current_time, pti->last_n_i_open,
+			 "l",
+			 port == 0?"total":PortName(port));
+    }
+
+    pti->iopen_last_time = current_time;
 }
 
 #endif /* LOAD_MODULE_TRAFFIC */

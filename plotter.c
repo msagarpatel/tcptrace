@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/plotter.c,v 3.20 1998/08/14 19:30:44 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 3.21 1998/10/13 00:46:17 sdo Exp $";
 
 #include "tcptrace.h"
 
@@ -289,10 +289,11 @@ new_plotter(
     /*  Y is signed except when it's a sequence number */
     /* ugly hack -- unsigned makes the graphs hard to work with and is
        only needed for the time sequence graphs */
+    /* suggestion by Michele Clark at UNC - make them double instead */
     Mfprintf(f,"%s %s\n",
 	     graph_time_zero?"dtime":"timeval",
 	     ((strcmp(ylabel,"sequence number") == 0)&&(!graph_seq_zero))?
-	     "unsigned":"signed");
+	     "double":"signed");
 
     Mfprintf(f,"title\n%s\n", title);
     Mfprintf(f,"xlabel\n%s\n", xlabel);

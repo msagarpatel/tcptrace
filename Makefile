@@ -104,14 +104,14 @@ DEFINES += -DGROK_ETHERPEEK
 ################################################################## 
 
 CC = gcc
-CCOPT = -O2
+CCOPT = -O2 -Wall -Werror -g
 INCLS = -I.  ${PCAP_INCS}
 
 # Standard CFLAGS
 # Probably want full optimization
 # FreeBSD needs	-Ae
 # HP needs	-Ae
-CFLAGS = $(CCOPT) $(DEFINES)  -DHAVE_LIBM=1 -DSIZEOF_UNSIGNED_LONG_LONG_INT=8 -DHAVE_LIBNSL=1 -DHAVE_LIBSOCKET=1 -DHAVE_ETHER_NTOA=1 -DHAVE_MKSTEMP=1 -DHAVE_INET_NTOP=1   $(INCLS)
+CFLAGS = $(CCOPT) $(DEFINES)  -DHAVE_LIBM=1 -DSIZEOF_UNSIGNED_LONG_LONG_INT=8 -DHAVE_LIBNSL=1 -DHAVE_LIBSOCKET=1 -DHAVE_ETHER_NTOA=1 -DHAVE_MKSTEMP=1   $(INCLS)
 
 # Standard LIBS
 LDLIBS = -lsocket -lnsl -lm  ${PCAP_LDLIBS}
@@ -140,7 +140,7 @@ CFILES=compress.c etherpeek.c gcache.c mfiles.c missing.c names.c \
 MODULES=mod_http.c mod_traffic.c mod_rttgraph.c mod_tcplib.c mod_collie.c
 OFILES= ${CFILES:.c=.o} ${MODULES:.c=.o}
 
-
+all: tcptrace versnum
 
 tcptrace: ${OFILES}
 	${CC} ${LDFLAGS} ${CFLAGS} ${OFILES} -o tcptrace ${LDLIBS}
@@ -173,6 +173,10 @@ filt_scanner.c: filt_scanner.l filter.h filt_parser.h
 # filt_parser.h created as a side effect of running yacc...
 filt_parser.h: filt_parser.c
 
+# version numbering program
+versnum: versnum.c version.h
+	${CC} ${LDFLAGS} ${CFLAGS} versnum.c -o versnum ${LDLIBS}
+
 #
 # obvious dependencies
 #
@@ -189,7 +193,7 @@ ci:
 #
 # for cleaning up
 clean:
-	rm -f *.o tcptrace core *.xpl *.dat .devel \
+	rm -f *.o tcptrace versnum core *.xpl *.dat .devel \
 		config.cache config.log config.status bin.* \
 		filt_scanner.c filt_parser.c y.tab.h y.output PF \
 		filt_parser.output filt_parser.h
@@ -200,9 +204,13 @@ noplots:
 
 #
 # for making distribution
-tarfile:
-	cd ..; /usr/sbin/tar -FFcfv $$HOME/tcptrace.tar tcptrace
-	gzip $$HOME/tcptrace.tar
+tarfile: versnum
+	@ VERS=`./versnum`; DIR=tcptrace_$${VERS}; \
+	GZTAR=$$HOME/tcptrace.$${VERS}.tar.gz; \
+	cd ..; \
+	test -h $${DIR} || ln -s src $${DIR}; \
+	/usr/sbin/tar -FFcvhf - $${DIR} | gzip > $${GZTAR}; \
+	echo ; echo "Tarfile is in $${GZTAR}"
 #
 # similar, but include RCS directory and etc
 bigtarfile:

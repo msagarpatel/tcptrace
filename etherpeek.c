@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.17 1998/05/13 22:58:04 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.18 1998/09/30 22:59:11 sdo Exp $";
 
 
 /****************************************
@@ -285,6 +285,12 @@ pread_EP(
 
 	/* read the rest of the packet */
 	len -= sizeof(struct ether_header);
+	if (len >= IP_MAXPACKET) {
+	    /* sanity check */
+	    fprintf(stderr,
+		    "pread_EP: invalid next packet, IP len is %d, return EOF\n", len);
+	    return(0);
+	}
 	if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
 	    if (rlen != 0)
 		if (debug)

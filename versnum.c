@@ -25,32 +25,15 @@
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
  */
-static char const rcsid_version[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/version.h,v 3.50 1998/10/17 01:39:21 sdo Exp $";
+static char const rcsid_versnum[] =
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/versnum.c,v 1.1 1998/10/17 00:24:25 sdo Exp $";
 
+#include <stdio.h>
+#include "version.h"
 
-/* source code version information */
-#define VERSION_MAJOR	5
-#define VERSION_MINOR	0
-#define VERSION_BUGFIX	10
-#define VERSION_DATE	"Fri Oct 16, 1998"
-
-
-
-/* the rest of these are just ugly conversion constants */
-#define STRINGIZE(y) #y
-#define ADD_QUOTES(x) STRINGIZE (x)
-
-/* just the digits */
-#define VERS_DIGITS   VERSION_MAJOR##.##VERSION_MINOR##.##VERSION_BUGFIX
-#define VERSION_NUM ADD_QUOTES(VERS_DIGITS)
-
-/* the string to print */
-#define VERSION  "Ostermann's tcptrace -- version " VERSION_NUM " -- " VERSION_DATE
-
-
-/* build information */
-/* constants filled in when version.c is compiled */
-extern char *built_bywhom;
-extern char *built_when;
-extern char *built_where;
+int
+main()
+{
+    printf("%s\n", VERSION_NUM);
+    exit(0);
+}

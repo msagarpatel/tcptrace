@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.10 1998/03/05 01:17:14 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/snoop.c,v 3.11 1998/09/30 22:59:00 sdo Exp $";
 
 
 /* 
@@ -105,6 +105,12 @@ pread_snoop(
 
 	/* read the rest of the packet */
 	len -= sizeof(struct ether_header);
+	if (len >= IP_MAXPACKET) {
+	    /* sanity check */
+	    fprintf(stderr,
+		    "pread_snoop: invalid next packet, IP len is %d, return EOF\n", len);
+	    return(0);
+	}
 	if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
 	    if (rlen != 0)
 		if (debug)

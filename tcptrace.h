@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.54 1998/08/14 19:22:34 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.55 1998/09/24 18:02:18 sdo Exp $";
 
 
 #include <stdio.h>
@@ -409,6 +409,7 @@ extern Bool printsuppress;
 extern Bool printem;
 extern Bool printallofem;
 extern Bool printticks;
+extern Bool warn_ooo;
 extern Bool warn_printtrunc;
 extern Bool warn_printbadmbz;
 extern Bool warn_printhwdups;

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.46 1998/08/14 20:09:15 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.49 1998/10/16 20:43:13 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -324,30 +324,41 @@ FindTTP(
 	    if (ptp->inactive)
 		continue;
 
+	    /* Fri Oct 16, 1998 */
+	    /* note: original heuristic was not sufficient.  Bugs */
+	    /* were pointed out by Brian Utterback and later by */
+	    /* myself and Mark Allman */
+
 	    /* check for NEW connection on these same endpoints */
 	    /* 1) At least 4 minutes idle time */
-	    /*  AND */
+	    /*  OR */
 	    /* 2) heuristic (we might miss some) either: */
 	    /*    this packet has a SYN */
-	    /*    last conn saw both FINs */
+	    /*    last conn saw both FINs and/or RSTs */
+	    /*    SYN sequence number outside last window (rfc 1122) */
 	    /* if so, mark it INACTIVE and skip from now on */
-	    if (elapsed(ptp->last_time,current_time)/1000000 > (4*60)) {
-		if ((SYN_SET(ptcp)) ||
-		    ((ptp->a2b.fin_count >= 1) &&
-		     (ptp->b2a.fin_count >= 1))) {
-		    if (debug) {
-			printf("%s: Marking 0x%08x %s<->%s INACTIVE (idle: %f sec)\n",
-			       ts2ascii(&current_time),
-			       (unsigned) ptp,
-			       ptp->a_endpoint, ptp->b_endpoint,
-			       elapsed(ptp->last_time,
-				       current_time)/1000000);
-			if (debug > 1)
-			    PrintTrace(ptp);
-		    }
-		    ptp->inactive = TRUE;
-		    continue;
+	    if ((elapsed(ptp->last_time,current_time)/1000000 > (4*60)) ||
+		((SYN_SET(ptcp)) && 
+		 (((ptp->a2b.fin_count >= 1) ||
+		   (ptp->b2a.fin_count >= 1)) ||
+		  ((ptp->a2b.reset_count >= 1) ||
+		   (ptp->b2a.reset_count >= 1))) &&
+		 (((dir == A2B) &&
+		   (ptcp->th_seq > ptp->a2b.windowend)) ||
+		  ((dir == B2A) &&
+		   (ptcp->th_seq > ptp->b2a.windowend))))) {
+		if (debug) {
+		    printf("%s: Marking 0x%08x %s<->%s INACTIVE (idle: %f sec)\n",
+			   ts2ascii(&current_time),
+			   (unsigned) ptp,
+			   ptp->a_endpoint, ptp->b_endpoint,
+			   elapsed(ptp->last_time,
+				   current_time)/1000000);
+		    if (debug > 1)
+			PrintTrace(ptp);
 		}
+		ptp->inactive = TRUE;
+		continue;
 	    }
 
 	    /* move to head of access list (unless already there) */
@@ -442,6 +453,31 @@ dotrace(
     }
     ptp_save->last_time = current_time;
 
+    /* bug fix:  it's legal to have the same end points reused.  The */
+    /* program uses a heuristic of looking at the elapsed time from */
+    /* the last packet on the previous instance and the number of FINs */
+    /* in the last instance.  If we don't increment the fin_count */
+    /* before bailing out in "ignore_pair" below, this heuristic breaks */
+
+    /* figure out which direction this packet is going */
+    if (dir == A2B) {
+	thisdir  = &ptp_save->a2b;
+	otherdir = &ptp_save->b2a;
+    } else {
+	thisdir  = &ptp_save->b2a;
+	otherdir = &ptp_save->a2b;
+    }
+
+    /* meta connection stats */
+    if (SYN_SET(ptcp))
+	++thisdir->syn_count;
+    if (RESET_SET(ptcp))
+	++thisdir->reset_count;
+    if (FIN_SET(ptcp))
+	++thisdir->fin_count;
+
+    /* end bug fix */
+
 
     /* if we're ignoring this connection, do no further processing */
     if (ptp_save->ignore_pair) {
@@ -465,15 +501,6 @@ dotrace(
     /* grab the address from this packet */
     CopyAddr(&tp_in.addr_pair, pip,
 	     th_sport, th_dport);
-
-    /* figure out which direction this packet is going */
-    if (dir == A2B) {
-	thisdir  = &ptp_save->a2b;
-	otherdir = &ptp_save->b2a;
-    } else {
-	thisdir  = &ptp_save->b2a;
-	otherdir = &ptp_save->a2b;
-    }
 
 
     /* simple bookkeeping */
@@ -545,12 +572,6 @@ dotrace(
     /* total packets stats */
     ++ptp_save->packets;
     ++thisdir->packets;
-    if (SYN_SET(ptcp))
-	++thisdir->syn_count;
-    if (RESET_SET(ptcp))
-	++thisdir->reset_count;
-    if (FIN_SET(ptcp))
-	++thisdir->fin_count;
 
     /* instantaneous throughput stats */
     if (graph_tput) {
@@ -611,8 +632,13 @@ dotrace(
     retrans = FALSE;
     out_order = FALSE;
     retrans_num_bytes = 0;
-    if (tcp_data_length > 0) {
-	retrans_num_bytes = rexmit(thisdir,start,tcp_data_length,&out_order);
+    if (SYN_SET(ptcp) || FIN_SET(ptcp) || tcp_data_length > 0) {
+	int len = tcp_data_length;
+	
+	if (SYN_SET(ptcp)) ++len;
+	if (FIN_SET(ptcp)) ++len;
+
+	retrans_num_bytes = rexmit(thisdir,start, len, &out_order);
 	if (out_order)
 	    ++thisdir->out_order_pkts;
     }

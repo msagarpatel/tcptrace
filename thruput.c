@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/thruput.c,v 3.10 1998/03/05 01:17:14 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/thruput.c,v 3.11 1998/10/13 00:47:19 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -41,6 +41,7 @@ DoThru(
 {
     double etime;
     double thruput;
+    char *myname, *hisname;
 
     /* init, if not already done */
     if (ZERO_TIME(&ptcb->thru_firsttime)) {
@@ -50,10 +51,19 @@ DoThru(
 	ptcb->thru_lasttime = current_time;
 	ptcb->thru_pkts = 1;
 	ptcb->thru_bytes = nbytes;
+	
 
+	/* bug fix from Michele Clark - UNC */
+	if (&ptcb->ptp->a2b == ptcb) {
+	    myname = ptcb->ptp->a_endpoint;
+	    hisname = ptcb->ptp->b_endpoint;
+	} else {
+	    myname = ptcb->ptp->b_endpoint;
+	    hisname = ptcb->ptp->a_endpoint;
+	}
 	/* create the plotter file */
 	sprintf(title,"%s_==>_%s (throughput)",
-		ptcb->ptp->a_endpoint, ptcb->ptp->b_endpoint);
+		myname, hisname);
 	ptcb->thru_plotter = new_plotter(ptcb,NULL,title,
 					 "time","thruput (bytes/sec)",
 					 THROUGHPUT_FILE_EXTENSION);
