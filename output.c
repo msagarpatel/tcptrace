@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/output.c,v 3.34 1998/11/04 15:11:26 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/output.c,v 3.35 1998/11/18 13:47:36 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -36,8 +36,6 @@ static char const rcsid[] =
 
 
 /* local routines */
-static u_int SynCount(tcp_pair *);
-static u_int FinCount(tcp_pair *);
 static double Average(double, int);
 static double Stdev(double, double, int);
 static void StatLineP(char *, char *, char *, void *, void *);
@@ -67,7 +65,7 @@ static char *UDPFormatBrief(udp_pair *pup);
 
 
 
-static u_int
+u_int
 SynCount(
     tcp_pair *ptp)
 {
@@ -80,7 +78,7 @@ SynCount(
 
 
 
-static u_int
+u_int
 FinCount(
     tcp_pair *ptp)
 {
@@ -320,6 +318,9 @@ PrintTrace(
     StatLineF("data xmit time","secs","%7.3f",
 	      etime_data1 / 1000000.0,
 	      etime_data2 / 1000000.0);
+    StatLineF("idletime max","ms","%8.1f",
+	      (double)pab->idle_max/1000.0,
+	      (double)pba->idle_max/1000.0);
 
     if ((pab->num_hardware_dups != 0) || (pba->num_hardware_dups != 0)) {
 	StatLineI("hardware dups","segs",

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.52 1998/11/04 15:14:37 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/trace.c,v 3.56 1998/11/18 16:41:25 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -50,8 +50,27 @@ int max_tcp_pairs = 64; /* initial value, automatically increases */
 u_long tcp_trace_count = 0;
 
 
+/* Tue Nov 17, 1998 */
+/* prior to version 5.13, we kept a hash table of all of the connections. */
+/* The most recently-accessed connections move to the front of the bucket */
+/* linked list.  Unfortunately, when reading thousands of connections on */
+/* a machine with limited physical memory, this worked poorly.  Every time */
+/* a new connection opened, we had to search the entire bucket, which */
+/* pulled all of the paged-out connections back into memory.  The new */
+/* system keeps a quick snapshot of the connection (ptp_snap) in the */
+/* hash table.  We only retrieve the connection record if the snapshot */
+/* matches. The result is that it works MUCH better when memory is low. */
+typedef struct ptp_snap {
+    tcp_pair_addrblock	addr_pair; /* just a copy */
+    struct ptp_snap *next;
+    tcp_pair *ptp;
+} ptp_snap;
+
+
+
 /* local routine definitions */
 static tcp_pair *NewTTP(struct ip *, struct tcphdr *);
+static ptp_snap *NewPTPH(void);
 static tcp_pair *FindTTP(struct ip *, struct tcphdr *, int *);
 static void MoreTcpPairs(int num_needed);
 static void ExtractContents(u_long seq, u_long tcp_data_bytes,
@@ -323,6 +342,7 @@ NewTTP(
 	strdup(EndpointName(ptp->addr_pair.b_address,
 			    ptp->addr_pair.b_port));
 
+    /* init time sequence graphs */
     ptp->a2b.tsg_plotter = ptp->b2a.tsg_plotter = -1;
     if (graph_tsg && !ptp->ignore_pair) {
 	if (!ignore_non_comp || (SYN_SET(ptcp))) {
@@ -343,6 +363,63 @@ NewTTP(
 	}
     }
 
+    /* init cwin graphs */
+    ptp->a2b.cwin_plotter = ptp->b2a.cwin_plotter = -1;
+    if (graph_cwin && !ptp->ignore_pair) {
+	if (!ignore_non_comp || (SYN_SET(ptcp))) {
+	    sprintf(title,"%s_==>_%s (time sequence graph)",
+		    ptp->a_endpoint, ptp->b_endpoint);
+	    ptp->a2b.cwin_plotter =
+		new_plotter(&ptp->a2b,NULL,title,
+			    graph_time_zero?"relative time":"time",
+			    "Outstanding Data (bytes)",
+			    CWIN_FILE_EXTENSION);
+	    sprintf(title,"%s_==>_%s (time sequence graph)",
+		    ptp->b_endpoint, ptp->a_endpoint);
+	    ptp->b2a.cwin_plotter =
+		new_plotter(&ptp->b2a,NULL,title,
+			    graph_time_zero?"relative time":"time",
+			    "Outstanding Data (bytes)",
+			    CWIN_FILE_EXTENSION);
+	    ptp->a2b.cwin_line =
+		new_line(ptp->a2b.cwin_plotter, "cwin", "red");
+	    ptp->b2a.cwin_line =
+		new_line(ptp->b2a.cwin_plotter, "cwin", "red");
+	    ptp->a2b.cwin_avg_line =
+		new_line(ptp->a2b.cwin_plotter, "avg cwin", "blue");
+	    ptp->b2a.cwin_avg_line =
+		new_line(ptp->b2a.cwin_plotter, "avg cwin", "blue");
+	}
+    }
+
+    /* init segment size graphs */
+    ptp->a2b.segsize_plotter = ptp->b2a.segsize_plotter = -1;
+    if (graph_segsize && !ptp->ignore_pair) {
+	sprintf(title,"%s_==>_%s (segment size graph)",
+		ptp->a_endpoint, ptp->b_endpoint);
+	ptp->a2b.segsize_plotter =
+	    new_plotter(&ptp->a2b,NULL,title,
+			graph_time_zero?"relative time":"time",
+			"segment size (bytes)",
+			SEGSIZE_FILE_EXTENSION);
+	sprintf(title,"%s_==>_%s (segment size graph)",
+		ptp->b_endpoint, ptp->a_endpoint);
+	ptp->b2a.segsize_plotter =
+	    new_plotter(&ptp->b2a,NULL,title,
+			graph_time_zero?"relative time":"time",
+			"segment size (bytes)",
+			SEGSIZE_FILE_EXTENSION);
+	ptp->a2b.segsize_line =
+	    new_line(ptp->a2b.segsize_plotter, "segsize", "red");
+	ptp->b2a.segsize_line =
+	    new_line(ptp->b2a.segsize_plotter, "segsize", "red");
+	ptp->a2b.segsize_avg_line =
+	    new_line(ptp->a2b.segsize_plotter, "avg segsize", "blue");
+	ptp->b2a.segsize_avg_line =
+	    new_line(ptp->b2a.segsize_plotter, "avg segsize", "blue");
+    }
+
+
     ptp->a2b.ss = (seqspace *)MallocZ(sizeof(seqspace));
     ptp->b2a.ss = (seqspace *)MallocZ(sizeof(seqspace));
 
@@ -352,38 +429,80 @@ NewTTP(
 }
 
 
+/* this routines gives us a new snapshot header.  We take great */
+/* pains to make sure that these don't end up on the same pages */
+/* as the actual connection, because we're trying to avoid sucking */
+/* those big strucuctures back into memory while searching. */
+/* So we allocate several of them on the same page and then use */
+/* that as a cache. */
+static ptp_snap *
+NewPTPH(void)
+{
+    ptp_snap *ptph;
+    static ptp_snap *ptph_freelist = NULL;
+    static int ptp_freelist_length = 0;
+
+    /* allocate several of them, all on the same page */
+    if (ptp_freelist_length <= 0) {
+	const int cachesize = PAGESIZE/sizeof(struct ptp_snap);
+	const int numbytes = cachesize * sizeof(struct ptp_snap);
+	ptp_freelist_length = cachesize;
+
+	/* like malloc, but aligned on a page boundary */
+	ptph_freelist = memalign(numbytes, PAGESIZE);
+
+	/* zero them all out */
+	memset(ptph_freelist, 0, numbytes);
+    }
+
+    /* now, there are some in the cache, take the next one */
+    --ptp_freelist_length;
+    ptph = ptph_freelist++;
+
+    return(ptph);
+}
+
+
 
 /* connection records are stored in a hash table.  Buckets are linked	*/
 /* lists sorted by most recent access.					*/
+#ifdef SMALL_TABLE
 #define HASH_TABLE_SIZE 1021  /* oughta be prime */
+#else /* SMALL_TABLE */
+#define HASH_TABLE_SIZE 4099  /* oughta be prime */
+#endif /* SMALL_TABLE */
 static tcp_pair *
 FindTTP(
     struct ip *pip,
     struct tcphdr *ptcp,
     int *pdir)
 {
-    static tcp_pair *ptp_hashtable[HASH_TABLE_SIZE] = {NULL};
-    tcp_pair **pptp_head = NULL;
-    tcp_pair *ptp;
-    tcp_pair *ptp_last;
-    tcp_pair tp_in;
+    static ptp_snap *ptp_hashtable[HASH_TABLE_SIZE] = {NULL};
+    ptp_snap **pptph_head = NULL;
+    ptp_snap *ptph;
+    ptp_snap *ptph_last;
+    tcp_pair_addrblock	tp_in;
     int dir;
     hash hval;
 
     /* grab the address from this packet */
-    CopyAddr(&tp_in.addr_pair, pip,
-	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
+    CopyAddr(&tp_in, pip, ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
 
     /* grab the hash value (already computed by CopyAddr) */
-    hval = tp_in.addr_pair.hash % HASH_TABLE_SIZE;
+    hval = tp_in.hash % HASH_TABLE_SIZE;
     
 
-    ptp_last = NULL;
-    pptp_head = &ptp_hashtable[hval];
-    for (ptp = *pptp_head; ptp; ptp=ptp->next) {
+    ptph_last = NULL;
+    pptph_head = &ptp_hashtable[hval];
+    for (ptph = *pptph_head; ptph; ptph=ptph->next) {
 	++search_count;
-	if (SameConn(&tp_in.addr_pair,&ptp->addr_pair,&dir)) {
+
+	if (SameConn(&tp_in,&ptph->addr_pair,&dir)) {
+	    /* OK, this looks good, suck it into memory */
+	    tcp_pair *ptp = ptph->ptp;
+
 	    /* check for "inactive" */
+	    /* (this shouldn't happen anymore, they aren't on the list */
 	    if (ptp->inactive)
 		continue;
 
@@ -445,36 +564,46 @@ FindTTP(
 			   ptp->a_endpoint, ptp->b_endpoint,
 			   elapsed(ptp->last_time,
 				   current_time)/1000000);
-		    if (debug > 1)
+		    if (debug > 3)
 			PrintTrace(ptp);
 		}
+
+		/* we won't need this one anymore, remove it from the */
+		/* hash table so we won't have to skip over it */
 		ptp->inactive = TRUE;
+		if (ptph == *pptph_head) {
+		    /* head of the list */
+		    *pptph_head = ptph->next;
+		} else {
+		    /* inside the list */
+		    ptph_last->next = ptph->next;
+		}
 		continue;
 	    }
 
 	    /* move to head of access list (unless already there) */
-	    if (ptp != *pptp_head) {
-		ptp_last->next = ptp->next; /* unlink */
-		ptp->next = *pptp_head;	    /* move to head */
-		*pptp_head = ptp;
+	    if (ptph != *pptph_head) {
+		ptph_last->next = ptph->next; /* unlink */
+		ptph->next = *pptph_head;     /* move to head */
+		*pptph_head = ptph;
 	    }
 	    *pdir = dir;
 	    return(ptp);
 	}
-	ptp_last = ptp;
+	ptph_last = ptph;
     }
 
     /* Didn't find it, make a new one, if possible */
-    ptp = NewTTP(pip,ptcp);
-
+    ptph = NewPTPH();
+    ptph->ptp = NewTTP(pip,ptcp);
+    ptph->addr_pair = ptph->ptp->addr_pair;
+    
     /* put at the head of the access list */
-    if (ptp) {
-	ptp->next = *pptp_head;
-	*pptp_head = ptp;
-    }
+    ptph->next = *pptph_head;
+    *pptph_head = ptph;
 
     *pdir = A2B;
-    return(ptp);
+    return(ptph->ptp);
 }
      
  
@@ -570,6 +699,15 @@ dotrace(
 
     /* end bug fix */
 
+
+    /* idle-time stats */
+    if (!ZERO_TIME(&thisdir->last_time)) {
+	u_long itime = elapsed(thisdir->last_time,current_time);
+	if (itime > thisdir->idle_max)
+	    thisdir->idle_max = itime;
+    }
+    thisdir->last_time = current_time;
+    
 
     /* if we're ignoring this connection, do no further processing */
     if (ptp_save->ignore_pair) {
@@ -668,6 +806,13 @@ dotrace(
     /* instantaneous throughput stats */
     if (graph_tput) {
 	DoThru(thisdir,tcp_data_length);
+    }
+
+    /* segment size graphs */
+    if ((tcp_data_length > 0) && (thisdir->segsize_plotter != NO_PLOTTER)) {
+	extend_line(thisdir->segsize_line, current_time, tcp_data_length);
+	extend_line(thisdir->segsize_avg_line, current_time,
+		    thisdir->data_bytes / thisdir->data_pkts);
     }
 
     /* calc. data range */
@@ -1006,6 +1151,13 @@ dotrace(
 	     (cwin < thisdir->cwin_min)))
 	    thisdir->cwin_min = cwin;
 	thisdir->cwin_tot += cwin;
+
+	/* graph cwin */
+	if (thisdir->cwin_plotter != NO_PLOTTER) {
+	    extend_line(thisdir->cwin_line, current_time, cwin);
+	    extend_line(thisdir->cwin_avg_line, current_time,
+			thisdir->cwin_tot / thisdir->ack_pkts);
+	}
     }
 
     return(ptp_save);
@@ -1043,6 +1195,29 @@ trace_done(void)
     if (debug>1)
 	fprintf(stdout,"average TCP search length: %d\n",
 		search_count / tcp_packet_count);
+
+    /* complete the "idle time" calculations using NOW */
+    for (ix = 0; ix <= num_tcp_pairs; ++ix) {
+	tcp_pair *ptp = ttp[ix];
+	tcb *thisdir; 
+	u_long itime;
+
+	/* if it's CLOSED, skip it */
+	if ((FinCount(ptp)>=2) || (ConnReset(ptp)))
+	    continue;
+
+	/* a2b direction */
+	thisdir = &ptp->a2b;
+	itime = elapsed(thisdir->last_time,current_time);
+	if (itime > thisdir->idle_max)
+	    thisdir->idle_max = itime;
+
+	/* a2b direction */
+	thisdir = &ptp->b2a;
+	itime = elapsed(thisdir->last_time,current_time);
+	if (itime > thisdir->idle_max)
+	    thisdir->idle_max = itime;
+    }
 
     /* if we're filtering, see which connections pass */
     if (filter_output) {

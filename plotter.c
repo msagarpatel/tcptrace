@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1998 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 3.22 1998/11/04 15:13:30 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 3.24 1998/11/16 21:37:30 sdo Exp $";
 
 #include "tcptrace.h"
 
@@ -610,11 +610,37 @@ extend_line(
 
     p = pline->plotter;
 
+#ifdef OLD
     /* attach a label to the first non-zero point */
     if (!pline->labelled) {
 	if (yval != 0) {
 	    plotter_temp_color(p, pline->color);
 	    plotter_text(p, xval, yval, "l", pline->label);
+	    pline->labelled = 1;
+	}
+    }
+#endif
+
+    /* attach a label midway on the first line segment above 0 */
+    /* for whom the second point is NOT 0 */
+    if (!pline->labelled) {
+	if ((yval != 0) && (!ZERO_TIME(&pline->last_time))) {
+	    timeval tv_avg;
+	    int avg_yval;
+
+	    /* average of last time and this time */
+	    tv_avg.tv_sec = (pline->last_time.tv_sec + xval.tv_sec)/2;
+	    tv_avg.tv_usec = (pline->last_time.tv_usec/2 + xval.tv_usec/2);
+
+	    /* average the Y values */
+	    avg_yval = (1 + pline->last_y+yval)/2;
+	    /* (rounding UP, please) */
+
+	    /* draw the label */
+	    plotter_temp_color(p, pline->color);
+	    plotter_text(p, tv_avg, avg_yval, "l", pline->label);
+
+	    /* remember that it's been done */
 	    pline->labelled = 1;
 	}
     }

@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_traffic[] =
-   "$Id: mod_traffic.c,v 1.15 1998/11/04 15:15:17 sdo Exp sdo $";
+   "$Id: mod_traffic.c,v 1.18 1998/11/18 13:50:05 sdo Exp $";
 
 #ifdef LOAD_MODULE_TRAFFIC
 
@@ -54,6 +54,11 @@ struct traffic_info {
     u_long nactive;
     u_long ttlactive;
 
+    /* idle connections */
+    PLINE line_nidle;
+    u_long nidle;
+    u_long ttlidle;
+
     /* open connections */
     PLINE line_nopen;
     u_long nopen;
@@ -68,6 +73,11 @@ struct traffic_info {
     PLINE line_nlong;
     u_long nlong;
     u_long ttllong;
+
+    /* pureacks */
+    PLINE line_pureacks;
+    u_long npureacks;
+    u_long ttlpureacks;
 
     /* which color is used for plotting */
     char *color;
@@ -90,6 +100,7 @@ struct conn_info {
     Bool wasopen;		/* was this this connection EVER open? */
     Bool isopen;		/* is this connection open now? */
     Bool islong;		/* is this a long-duration connection? */
+    Bool halfopen;		/* for half open conns */
     struct traffic_info *pti1;	/* pointer to the port info for this one */
     struct traffic_info *pti2;	/* pointer to the port info for this one */
     struct conn_info *next;	/* next in the chain */
@@ -106,12 +117,15 @@ static struct conn_info *connhead = NULL;
 static PLOTTER plotter_bytes;
 static PLOTTER plotter_packets;
 static PLOTTER plotter_active;
+static PLOTTER plotter_idle;
 static PLOTTER plotter_open;
 static PLOTTER plotter_openclose;
 static PLOTTER plotter_i_open;
 static PLOTTER plotter_loss;
 static PLOTTER plotter_long;
 static PLOTTER plotter_rtt;
+static PLOTTER plotter_halfopen;
+static PLOTTER plotter_pureacks;
 
 #define  PLOTTER_BYTES_FILENAME		"traffic_bytes.xpl"
 #define  PLOTTER_PACKETS_FILENAME	"traffic_packets.xpl"
@@ -122,6 +136,9 @@ static PLOTTER plotter_rtt;
 #define  PLOTTER_LOSS_FILENAME		"traffic_loss.xpl"
 #define  PLOTTER_LONG_FILENAME		"traffic_long.xpl"
 #define  PLOTTER_RTT_FILENAME		"traffic_rtt.xpl"
+#define  PLOTTER_HALFOPEN_FILENAME	"traffic_halfopen.xpl"
+#define  PLOTTER_PUREACKS_FILENAME	"traffic_pureacks.xpl"
+#define  PLOTTER_IDLE_FILENAME		"traffic_idle.xpl"
 
 /* argument flags */
 static float age_interval = 15.0;  /* 15 seconds by default */
@@ -134,6 +151,9 @@ static Bool doplot_i_open = FALSE;
 static Bool doplot_loss = FALSE;
 static Bool doplot_long = FALSE;
 static Bool doplot_rtt = FALSE;
+static Bool doplot_halfopen = FALSE;
+static Bool doplot_pureacks = FALSE;
+static Bool doplot_idle = FALSE;
 static int longconn_duration = 60;
 
 
@@ -155,9 +175,11 @@ static void DoplotIOpen(int port, Bool fopen);
 static PLINE line_num_closes;
 static PLINE line_num_opens;
 static PLINE line_open_conns;
+static PLINE line_num_halfopens;
 static int num_closes = 0;
 static int num_opens = 0;
 static int open_conns = 0;
+static int num_halfopens = 0;
 
 /* info for the loss events graph */
 static PLINE line_dupacks;
@@ -283,6 +305,13 @@ traffic_init(
 			"active connections over time by port",
 			"time","active connections",
 			NULL);
+    if (doplot_idle)
+	plotter_idle =
+	    new_plotter(NULL,
+			PLOTTER_IDLE_FILENAME,
+			"idle connections over time by port",
+			"time","idle connections",
+			NULL);
     if (doplot_open)
 	plotter_open =
 	    new_plotter(NULL,
@@ -307,6 +336,24 @@ traffic_init(
 	line_num_opens = new_line(plotter_openclose, "Number Opens", "green");
 	line_num_closes = new_line(plotter_openclose, "Number Closes", "red");
 	line_open_conns = new_line(plotter_openclose, "Total Open", "blue");
+    }
+    if (doplot_halfopen) {
+	plotter_halfopen =
+	    new_plotter(NULL,
+			PLOTTER_HALFOPEN_FILENAME,
+			"half open connections over time",
+			"time","number of half open connections",
+			NULL);
+	line_num_halfopens = new_line(plotter_halfopen,
+				      "Halfopen Conns", "green");
+    }
+    if (doplot_pureacks) {
+	plotter_pureacks =
+	    new_plotter(NULL,
+			PLOTTER_PUREACKS_FILENAME,
+			"pure acks (no data) per second over time",
+			"time","pureacks/second",
+			NULL);
     }
 
     if (doplot_loss) {
@@ -433,12 +480,16 @@ MakeTrafficLines(
 	pti->line_npackets = new_line(plotter_packets, portname, pti->color);
     if (doplot_active)
 	pti->line_nactive = new_line(plotter_active, portname, pti->color);
+    if (doplot_idle)
+	pti->line_nidle = new_line(plotter_idle, portname, pti->color);
     if (doplot_open)
 	pti->line_nopen = new_line(plotter_open, portname, pti->color);
     if (doplot_long)
 	pti->line_nlong = new_line(plotter_long, portname, pti->color);
     if (doplot_i_open)
 	pti->line_niopen = new_line(plotter_i_open, portname, pti->color);
+    if (doplot_pureacks)
+	pti->line_pureacks = new_line(plotter_pureacks, portname, pti->color);
 }
 
 
@@ -511,9 +562,12 @@ traffic_read(
     /* add to GLOBAL counters */
     ports[0]->nbytes += bytes;
     ports[0]->npackets += 1;
+    ports[0]->npureacks += 1;
 
     /* see if we're closing it */
-    if (FIN_SET(ptcp) || RESET_SET(ptcp)) {
+    if (RESET_SET(ptcp) ||
+	(FIN_SET(ptcp) &&	/* find in BOTH directions */
+	 ((ptp->a2b.fin_count>0) && (ptp->b2a.fin_count>0)))) {
 	if (pci->isopen) {
 	    pci->isopen = 0;
 	    ++num_closes;
@@ -525,6 +579,21 @@ traffic_read(
 		DoplotIOpen(ptcp->th_sport, FALSE);
 		DoplotIOpen(0, FALSE);
 	    }
+	}
+    }
+
+    /* half open conns */
+    if (FIN_SET(ptcp)) {
+	if ((ptp->a2b.fin_count>0) && (ptp->b2a.fin_count>0)) {
+	    if (pci->halfopen) {
+		/* fully closed now */
+		--num_halfopens;
+		pci->halfopen = 0;
+	    }
+	} else if (!pci->halfopen) {
+		/* half open now */
+		++num_halfopens;
+		pci->halfopen = 1;
 	}
     }
 
@@ -583,6 +652,21 @@ traffic_read(
 	int etime_msecs = elapsed(ptp->first_time,current_time);
 	if (etime_msecs/1000000 > longconn_duration) {
 	    pci->islong = 1;
+	}
+    }
+
+    /* count "pure acks" (no data) */
+    if (ACK_SET(ptcp)) {
+	int tcp_length, tcp_data_length;
+	tcp_length = getpayloadlength(pip, plast);
+	tcp_data_length = tcp_length - (4 * ptcp->th_off);
+	if (tcp_data_length == 0) {
+	    if (pti1) {
+		++pti1->npureacks;
+	    }
+	    if (pti2) {
+		++pti2->npureacks;
+	    }
 	}
     }
 
@@ -654,9 +738,26 @@ AgeTraffic(void)
 		    ++pci->pti2->nlong;
 		++ports[0]->nlong;
 	    }
+
+	    if (!pci->wasactive) {
+		/* open and !active ==> IDLE */
+		if (pci->pti1)
+		    ++pci->pti1->nidle;
+		if (pci->pti2)
+		    ++pci->pti2->nidle;
+		++ports[0]->nidle;
+	    }
 	}
     }
     
+
+    /* ============================================================ */
+    /* plot halfopen conns */
+    if (doplot_halfopen) {
+	/* draw lines */
+	extend_line(line_num_halfopens,current_time, num_halfopens);
+    }
+
 
     /* ============================================================ */
     /* plot connection activity */
@@ -745,6 +846,12 @@ AgeTraffic(void)
 	    extend_line(pti->line_nactive,current_time, pti->nactive);
 	}
 
+	/* plot idle connections */
+	if (doplot_idle) {
+	    /* plot it */
+	    extend_line(pti->line_nidle,current_time, pti->nidle);
+	}
+
 
 	/* plot open connections */
 	if (doplot_open) {
@@ -756,18 +863,29 @@ AgeTraffic(void)
 	if (doplot_long) {
 	    extend_line(pti->line_nlong,current_time, pti->nlong);
 	}
+
+	/* plot pureacks */
+	if (doplot_pureacks) {
+	    /* convert to units per second */
+	    ups = (int)((float)pti->npureacks * 1000000.0 / etime);
+
+	    extend_line(pti->line_pureacks, current_time, ups);
+	}
     }
 
     /* zero them out */
     for (pti=traffichead; pti; pti=pti->next) {
 	pti->ttlbytes += pti->nbytes;
 	pti->ttlpackets += pti->npackets;
+	pti->ttlpureacks += pti->npureacks;
 
 	pti->nbytes = 0;
 	pti->nlong = 0;
 	pti->npackets = 0;
 	pti->nactive = 0;
+	pti->nidle = 0;
 	pti->nopen = 0;
+	pti->npureacks = 0;
     }
 
     last_time = current_time;
@@ -848,10 +966,13 @@ traffic_usage(void)
 \t       -A           generate the 'active connections' graph\n\
 \t       -B           generate the 'bytes per second' graph\n\
 \t       -C           generate the 'opens and closes' graph\n\
+\t       -H           generate the 'halfopen connections' graph\n\
+\t       -K           generate the 'pure acKs/second' graph\n\
 \t       -L           generate the 'losses per second' graph\n\
 \t       -O           generate the 'open connections' graph\n\
 \t       -I           generate the 'instantaneous open connections' graph\n\
 \t       -P           generate the 'packets per second' graph\n\
+\t       -Q           generate the 'idle (Quiet) connections' graph\n\
 \t       -R[MIN[-MAX]]generate the 'round trip time' graph\n\
 \t                    with args, ignore samples outside MIN to MAX (in ms)\n\
 \t       -D[SECS]     generate the 'long duration connection' graph\n\
@@ -896,13 +1017,16 @@ ParseArgs(char *argstring)
 		       age_interval);
 	} else if (strcmp(argv[i],"-G") == 0) {
 	    doplot_active = TRUE;
+	    doplot_idle = TRUE;
 	    doplot_bytes = TRUE;
 	    doplot_loss = TRUE;
 	    doplot_long = TRUE;
 	    doplot_open = TRUE;
+	    doplot_halfopen = TRUE;
 	    doplot_openclose = TRUE;
 	    doplot_i_open = TRUE;
 	    doplot_packets = TRUE;
+	    doplot_pureacks = TRUE;
 	    if (debug)
 		fprintf(stderr,
 			"mod_traffic: generating all graphs\n");
@@ -918,6 +1042,24 @@ ParseArgs(char *argstring)
 		fprintf(stderr,
 			"mod_traffic: generating 'bytes' graph into '%s'\n",
 			PLOTTER_BYTES_FILENAME);
+	} else if (strcmp(argv[i],"-H") == 0) {
+	    doplot_halfopen = TRUE;
+	    if (debug)
+		fprintf(stderr,
+			"mod_traffic: generating 'halfopen' graph into '%s'\n",
+			PLOTTER_HALFOPEN_FILENAME);
+	} else if (strcmp(argv[i],"-Q") == 0) {
+	    doplot_idle = TRUE;
+	    if (debug)
+		fprintf(stderr,
+			"mod_traffic: generating 'idle' graph into '%s'\n",
+			PLOTTER_IDLE_FILENAME);
+	} else if (strcmp(argv[i],"-K") == 0) {
+	    doplot_pureacks = TRUE;
+	    if (debug)
+		fprintf(stderr,
+			"mod_traffic: generating 'pureacks' graph into '%s'\n",
+			PLOTTER_PUREACKS_FILENAME);
 	} else if (strcmp(argv[i],"-L") == 0) {
 	    doplot_loss = TRUE;
 	    if (debug)
@@ -966,13 +1108,16 @@ ParseArgs(char *argstring)
 			"mod_traffic: generating 'packets' graph into '%s'\n",
 			PLOTTER_PACKETS_FILENAME);
 	} else if (strncmp(argv[i],"-R",2) == 0) {
+	    int nargs;
 	    doplot_rtt = TRUE;
 	    if (debug)
 		fprintf(stderr,
 			"mod_traffic: generating 'rtt' graph into '%s'\n",
 			PLOTTER_RTT_FILENAME);
 	    /* check for valid RTT range args */
-	    switch (sscanf(argv[i],"-R%d-%d", &rtt_minvalid, &rtt_maxvalid)) {
+	    nargs = sscanf(argv[i],"-R%d-%d", &rtt_minvalid,
+			   &rtt_maxvalid);
+	    switch (nargs) {
 	      case 2: {		/* 2 args is min and max */
 		  /* sanity check */
 		  if (rtt_maxvalid <= rtt_minvalid) {
@@ -996,6 +1141,7 @@ ParseArgs(char *argstring)
 		  break;
 	      }
 	      case 0: 		/* no args, that's OK */
+	      case -1: 		/* (means the same as 0) */
 		break;
 	      default:		/* illegal args  */
 		fprintf(stderr,

@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.h,v 3.56 1998/11/04 15:15:44 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.h,v 3.58 1998/11/18 13:49:08 sdo Exp $";
 
 
 #include <stdio.h>
@@ -291,6 +291,20 @@ typedef struct tcb {
     u_long	rtt_lastrtt;
     timeval	rtt_lasttime;
 
+    /* Segment size graph */
+    PLOTTER	segsize_plotter;
+    PLINE	segsize_line;
+    PLINE	segsize_avg_line;
+
+    /* Congestion window graph */
+    PLOTTER	cwin_plotter;
+    PLINE	cwin_line;
+    PLINE	cwin_avg_line;
+
+    /* for tracking unidirectional idle time */
+    timeval	last_time;	/* last packet SENT from this side */
+    u_long	idle_max;	/* maximum idle time observed (usecs) */
+
     /* host name letter(s) */
     char	*host_letter;
 } tcb;
@@ -337,9 +351,6 @@ struct stcp_pair {
 
     /* which file this connection is from */
     char		*filename;
-
-    /* linked list of usage */
-    struct stcp_pair *next;
 };
 typedef struct stcp_pair tcp_pair;
 
@@ -411,6 +422,8 @@ extern Bool dump_rtt;
 extern Bool graph_rtt;
 extern Bool graph_tput;
 extern Bool graph_tsg;
+extern Bool graph_segsize;
+extern Bool graph_cwin;
 extern Bool hex;
 extern Bool ignore_non_comp;
 extern Bool nonames;
@@ -502,6 +515,8 @@ int tv_cmp(struct timeval lhs, struct timeval rhs);
 char *elapsed2str(double etime);
 int ConnReset(tcp_pair *);
 int ConnComplete(tcp_pair *);
+u_int SynCount(tcp_pair *ptp);
+u_int FinCount(tcp_pair *ptp);
 char *ts2ascii(timeval *);
 char *ts2ascii_date(timeval *);
 char *ServiceName(portnum);
@@ -670,6 +685,8 @@ struct tcp_options {
 #define RTT_DUMP_FILE_EXTENSION		"_rttraw.dat"
 #define RTT_GRAPH_FILE_EXTENSION	"_rtt.xpl"
 #define PLOT_FILE_EXTENSION		"_tsg.xpl"
+#define SEGSIZE_FILE_EXTENSION		"_ssize.xpl"
+#define CWIN_FILE_EXTENSION		"_cwin.xpl"
 #define THROUGHPUT_FILE_EXTENSION	"_tput.xpl"
 #define CONTENTS_FILE_EXTENSION		"_contents.dat"
 

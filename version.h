@@ -26,14 +26,14 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_version[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/version.h,v 3.52 1998/11/04 15:09:32 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/version.h,v 3.56 1998/11/18 13:46:28 sdo Exp $";
 
 
 /* source code version information */
 #define VERSION_MAJOR	5
 #define VERSION_MINOR	0
-#define VERSION_BUGFIX	12
-#define VERSION_DATE	"Wed Nov  4, 1998"
+#define VERSION_BUGFIX	14
+#define VERSION_DATE	"Wed Nov 18, 1998"
 
 
 
