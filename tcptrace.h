@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.12 1997/03/05 06:25:47 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.h,v 3.18 1997/07/24 21:10:14 sdo Exp $";
 
 
 #include "config.h"
@@ -153,6 +153,16 @@ typedef struct tcb {
     u_long	out_order_pkts;	/* out of order packets */
     u_long	sacks_sent;	/* sacks returned */
 
+    /* added for initial window stats (for Mallman) */
+    u_long	initialwin_bytes;	/* initial window (in bytes) */
+    u_long	initialwin_segs;	/* initial window (in segments) */
+    Bool	data_acked;	/* has any non-SYN data been acked? */
+
+    /* added for (estimated) congestions window stats (for Mallman) */
+    u_long	cwin_max;
+    u_long	cwin_min;
+    u_long	cwin_tot;
+
     /* RTT stats for singly-transmitted segments */
     u_long	rtt_min;
     u_long	rtt_max;
@@ -258,6 +268,7 @@ extern Bool hex;
 extern Bool ignore_non_comp;
 extern Bool nonames;
 extern Bool print_rtt;
+extern Bool print_cwin;
 extern Bool printbrief;
 extern Bool printem;
 extern Bool printticks;
@@ -276,14 +287,14 @@ extern timeval current_time;
 
 #define MAX_NAME 20
 
+/* Let's use ANSI C rather than old BSD calls... */
+#define bzero(ptr,nbytes) memset(ptr,0,nbytes)
+#define bcopy(from_ptr,to_ptr,nbytes) memcpy(to_ptr,from_ptr,nbytes)
+
 
 /* external routine decls */
 double sqrt(double x);
 char *ether_ntoa();
-#ifndef I386_NBSD1
-void bzero(void *, int);
-void bcopy(void *, void *,int);
-#endif
 void free(void *);
 int finite(double);
 
@@ -294,7 +305,7 @@ void *ReallocZ(void *oldptr, int obytes, int nbytes);
 void trace_init(void);
 void trace_done(void);
 void seglist_init(tcb *);
-void printpacket(int, int, void *, int, struct ip *);
+void printpacket(int, int, void *, int, struct ip *, void *plast);
 void plotter_vtick(PLOTTER, timeval, u_long);
 void plotter_utick(PLOTTER, timeval, u_long);
 void plotter_uarrow(PLOTTER, timeval, u_long);
@@ -317,7 +328,8 @@ void plotter_darrow(PLOTTER, timeval, u_long);
 void plotter_box(PLOTTER, timeval, u_long);
 void plotter_arrow(PLOTTER, timeval, u_long, char);
 void plot_init(void);
-void dotrace(struct ip *, void *plast);
+tcp_pair *dotrace(struct ip *, void *plast);
+void PrintRawData(char *label, void *pfirst, void *plast);
 void PrintTrace(tcp_pair *);
 void PrintBrief(tcp_pair *);
 void OnlyConn(int);
@@ -356,11 +368,6 @@ struct tcp_options *ParseOptions(struct tcphdr *ptcp, void *plast);
 /* connection directions */
 #define A2B 1
 #define B2A -1
-
-/* all we REALLY need is the IP and TCP headers, so don't copy	*/
-/* any more than that...  IP header is <= (4*16) bytes and 	*/
-/* the TCP header is at most (4*16)				*/
-#define MAX_IP_PACKLEN ((4*16)+(4*16))
 
 
 /*macros for maintaining the seqspace used for rexmit*/

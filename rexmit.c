@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.6 1997/03/04 18:13:51 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/rexmit.c,v 3.7 1997/07/14 20:58:28 sdo Exp $";
 
 
 /* 
@@ -561,7 +561,7 @@ dump_rtt_sample(
 
     Mfprintf(ptcb->rtt_dump_file,"%lu %lu\n",
 	    pseg->seq_firstbyte,
-	    etime_rtt/1000  /* convert from us to ms */ );
+	    (int)(etime_rtt/1000)  /* convert from us to ms */ );
 }
 
 

@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.5 1997/03/05 06:23:33 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/etherpeek.c,v 3.7 1997/07/24 21:11:09 sdo Exp $";
 
 
 /****************************************
@@ -61,7 +61,7 @@ struct EPFileHeader2 {
     unsigned long timeDate;	/* time and date stamp of the file (MAC format)*/
     unsigned long timeStart;	/* time of the first packet in the file*/
     unsigned long timeStop;	/* time of the last packet in the file*/
-    unsigned long futureUse[7];	/*reserved for future use and irrelavent to us!*/
+    unsigned long futureUse[7];	/*reserved for future use and irrelevent to us!*/
 };
 
 struct EPFilePacket {
@@ -94,6 +94,11 @@ struct EPPacketData {
     unsigned char *packetDataStart;	/* here is the packet data*/
 };
 
+
+/* byte swapping */
+/* Mac's are in network byte order.  If this machine is NOT, then */
+/* we'll need to do conversion */
+
   
 unsigned long mactime;
 
@@ -121,7 +126,8 @@ pread_EP(
     int		 	*ptlen,
     void		**pphys,
     int			*pphystype,
-    struct ip		**ppip)
+    struct ip		**ppip,
+    void		**pplast)
 {
     int packlen;
     int rlen;
@@ -137,6 +143,9 @@ pread_EP(
 		fprintf(stderr,"Bad EP header\n");
 	    return(0);
 	}
+	hdr.packetLength = ntohs(hdr.packetLength);
+	hdr.sliceLength = ntohs(hdr.sliceLength);
+	
 	if ((rlen=fread(&hdr2,1,Real_Size_FP2,stdin)) !=Real_Size_FP2) {
 	    if (rlen != 0)
 		fprintf(stderr,"Bad EP header\n");
@@ -147,6 +156,7 @@ pread_EP(
 		fprintf(stderr,"Bad EP header\n");
 	    return(0);
 	}
+	hdr3.timestamp = ntohl(hdr3.timestamp);
 
 	if (hdr.sliceLength)
 	    packlen = hdr.sliceLength; 
@@ -182,11 +192,13 @@ pread_EP(
 	    *ptlen = hdr.packetLength;
 
 	*ppip  = (struct ip *) pip_buf;
+	*pplast = (char *)pip_buf+len-1; /* last byte in the IP packet */
 	*pphys  = pep;
 	*pphystype = PHYS_ETHER;
 
 	/* if it's not TCP/IP, then skip it */
-	if ((pep->ether_type != ETHERTYPE_IP) || ((*ppip)->ip_p != IPPROTO_TCP))
+	if ((ntohs(pep->ether_type) != ETHERTYPE_IP) ||
+	    ((*ppip)->ip_p != IPPROTO_TCP))
 	    continue;
 
 	return(1);
@@ -213,6 +225,14 @@ int (*is_EP(void))()
 	rewind(stdin);
 	return(NULL);
     }
+
+    /* byte swapping */
+    nhdr2.length = ntohl(nhdr2.length);
+    nhdr2.numPackets = ntohl(nhdr2.numPackets);
+    nhdr2.timeDate = ntohl(nhdr2.timeDate);
+    nhdr2.timeStart = ntohl(nhdr2.timeStart);
+    nhdr2.timeStop = ntohl(nhdr2.timeStop);
+    
     mactime=nhdr2.timeDate - Mac2unix;  /*get time plus offset to unix time */
     /********** File header info ********************************/
     if (debug>1) {

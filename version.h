@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_version[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/version.h,v 3.10 1997/03/05 07:22:00 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/version.h,v 3.16 1997/07/24 19:40:25 sdo Exp $";
 
 
-#define VERSION "Ostermann's tcptrace -- version 3.2.9 -- Wed Mar  5, 1997"
+#define VERSION "Ostermann's tcptrace -- version 4.0.3 -- Thu Jul 24, 1997"

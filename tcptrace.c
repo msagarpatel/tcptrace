@@ -28,11 +28,12 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.c,v 3.13 1997/03/05 06:25:23 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/tcptrace.c,v 3.19 1997/07/24 21:10:46 sdo Exp $";
 
 
 #include "tcptrace.h"
 #include "file_formats.h"
+#include "modules.h"
 #include "version.h"
 
 
@@ -44,10 +45,14 @@ char *tcptrace_version = VERSION;
 static void ProcessFile(void);
 static void DumpFlags(void);
 static void Formats(void);
+static void ListModules(void);
 static void ParseArgs(int *pargc, char *argv[]);
 static void QuitSig();
 static void Usage(char *prog);
 static void Version(void);
+static void LoadModules(int argc, char *argv[]);
+static void CallModules(struct ip *pip, tcp_pair *ptp, void *plast);
+static void FinishModules();
 
 
 /* option flags and default values */
@@ -59,6 +64,7 @@ Bool graph_tsg = FALSE;
 Bool hex = TRUE;
 Bool ignore_non_comp = FALSE;
 Bool print_rtt = FALSE;
+Bool print_cwin = FALSE;
 Bool printbrief = TRUE;
 Bool printem = FALSE;
 Bool printticks = FALSE;
@@ -89,6 +95,7 @@ Output format options\n\
   -b      brief output format\n\
   -l      long output format\n\
   -r      print rtt statistics (slower for large files)\n\
+  -W      report on estimated congestion window (not generally useful)\n\
 Graphing options\n\
   -T      create throughput graph[s], (average over 10 segments, see -A)\n\
   -R      create rtt sample graph[s]\n\
@@ -119,6 +126,7 @@ Misc options\n\
   +[v]    reverse the setting of the -[v] flag (for booleans)\n\
 ");
     Formats();
+    ListModules();
     Version();
     exit(-2);
 }
@@ -143,6 +151,21 @@ Formats(void)
 		file_formats[i].format_name,
 		file_formats[i].format_descr);
 }
+
+
+static void
+ListModules(void)
+{
+    int i;
+
+    fprintf(stderr,"Included Modules:\n");
+    for (i=0; modules[i].module_name; ++i) {
+	fprintf(stderr,"\t%-15s  %s\n",
+		modules[i].module_name, modules[i].module_descr);
+	fprintf(stderr,"\tusage:\n");
+	(*modules[i].module_usage)();
+    }
+}
      
 
 
@@ -153,6 +176,9 @@ main(
 {
     struct stat stat;
     int i;
+
+    /* let modules start first */
+    LoadModules(argc,argv);
 
     /* parse the flags */
     ParseArgs(&argc,argv);
@@ -198,6 +224,7 @@ main(
     /* close files, cleanup, and etc... */
     plotter_done();
     trace_done();
+    FinishModules();
 
     exit(0);
 }
@@ -211,6 +238,7 @@ ProcessFile(void)
     struct ip *pip;
     int phystype;
     void *phys;  /* physical transport header */
+    tcp_pair *ptp;
     int fix;
     int len;
     int tlen;
@@ -249,7 +277,7 @@ ProcessFile(void)
 
     while (1) {
         /* read the next packet */
-	ret = (*ppread)(&current_time,&len,&tlen,&phys,&phystype,&pip);
+	ret = (*ppread)(&current_time,&len,&tlen,&phys,&phystype,&pip,&plast);
 	if (ret == 0) /* EOF */
 	    break;
 
@@ -263,14 +291,12 @@ ProcessFile(void)
 
 	/* progress counters */
 	if (!printem && printticks) {
-	    if (((pnum <    100) && (pnum %   10 == 0)) ||
-		((pnum <   1000) && (pnum %  100 == 0)) ||
-		((pnum <  10000) && (pnum % 1000 == 0)) ||
-		((pnum >= 10000) && (pnum % 1000 == 0))) {
-		off_t cur_pos;
-		cur_pos = lseek(fileno(stdin),0,SEEK_CUR);
+	    if (((pnum <    100) && (pnum %    10 == 0)) ||
+		((pnum <   1000) && (pnum %   100 == 0)) ||
+		((pnum <  10000) && (pnum %  1000 == 0)) ||
+		((pnum >= 10000) && (pnum % 10000 == 0))) {
 		fprintf(stderr ,"%d %lu%%\r",
-			pnum, (100*cur_pos)/filesize);
+			pnum, (ftell(stdin)/(filesize/100)));
 	    }
 	    fflush(stderr);
 	}
@@ -320,7 +346,7 @@ for other packet types, I just don't have a place to test them\n\n");
 	/* print the packet, if requested */
 	if (printem) {
 	    printf("Packet %d\n", pnum);
-	    printpacket(len,tlen,phys,phystype,pip);
+	    printpacket(len,tlen,phys,phystype,pip,plast);
 	}
 
 	/* we must assume it's an IP packet, but */
@@ -329,10 +355,11 @@ for other packet types, I just don't have a place to test them\n\n");
 	    continue;
 
         /* perform packet analysis */
-	plast = (void *)((unsigned)pip + tlen - 1);
-	if (phystype == PHYS_ETHER)
-	    plast = (void *)((u_int)plast - sizeof(struct ether_header));
-	dotrace(pip,plast);
+	ptp = dotrace(pip,plast);
+
+	/* also, pass the packet to any modules defined */
+	CallModules(pip,ptp,plast);
+	
 
 	/* for efficiency, only allow a signal every 1000 packets	*/
 	/* (otherwise the system call overhead will kill us)		*/
@@ -422,6 +449,10 @@ ParseArgs(
 
     /* parse the args */
     for (i=1; i < *pargc; ++i) {
+	/* modules might have stolen args... */
+	if (argv[i] == NULL)
+	    continue;
+
 	if (*argv[i] == '-') {
 	    if (argv[i][1] == '\00') /* just a '-' */
 		Usage(argv[0]);
@@ -435,6 +466,7 @@ ParseArgs(
 		  case 'R': graph_rtt = TRUE; break;
 		  case 'S': graph_tsg = TRUE; break;
 		  case 'T': graph_tput = TRUE; break;
+		  case 'W': print_cwin = TRUE; break;
 		  case 'X': hex = TRUE; break;
 		  case 'Z': dump_rtt = TRUE; break;
 		  case 'b': printbrief = TRUE; break;
@@ -492,6 +524,7 @@ ParseArgs(
 		  case 'R': graph_rtt = !TRUE; break;
 		  case 'S': graph_tsg = !TRUE; break;
 		  case 'T': graph_tput = !TRUE; break;
+		  case 'W': print_cwin = !TRUE; break;
 		  case 'X': hex = !TRUE; break;
 		  case 'Z': dump_rtt = !TRUE; break;
 		  case 'b': printbrief = !TRUE; break;
@@ -545,4 +578,72 @@ DumpFlags(void)
 	fprintf(stderr,"ending pnum:      %lu\n", endpnum);
 	fprintf(stderr,"throughput intvl: %d\n", thru_interval);
 	fprintf(stderr,"debug:            %d\n", debug);
+}
+
+
+static void
+LoadModules(
+    int argc,
+    char *argv[])
+{
+    int i;
+    int enable;
+
+    for (i=0; modules[i].module_init != NULL; ++i) {
+	if (debug)
+	    fprintf(stderr,"Initializing module \"%s\"\n",
+		    modules[i].module_name);
+	enable = (*modules[i].module_init)(argc,argv);
+	if (enable) {
+	    if (debug)
+		fprintf(stderr,"Module \"%s\" enabled\n",
+			modules[i].module_name);
+	} else {
+	    if (debug)
+		fprintf(stderr,"Module \"%s\" not active\n",
+			modules[i].module_name);
+	    modules[i].module_read = NULL;
+	    modules[i].module_done = NULL;
+	}
+    }
+}
+
+
+
+static void
+FinishModules(void)
+{
+    int i;
+
+    for (i=0; modules[i].module_init != NULL; ++i) {
+	if (modules[i].module_done == NULL)
+	    continue;  /* might be disabled */
+
+	if (debug)
+	    fprintf(stderr,"Calling cleanup for module \"%s\"\n",
+		    modules[i].module_name);
+
+	(*modules[i].module_done)();
+    }
+}
+
+
+static void
+CallModules(
+    struct ip *pip,
+    tcp_pair *ptp,
+    void *plast)
+{
+    int i;
+
+    for (i=0; modules[i].module_init != NULL; ++i) {
+	if (modules[i].module_read == NULL)
+	    continue;  /* might be disabled */
+
+	if (debug>3)
+	    fprintf(stderr,"Calling read routine for module \"%s\"\n",
+		    modules[i].module_name);
+
+	(*modules[i].module_read)(pip,ptp,plast);
+    }
 }

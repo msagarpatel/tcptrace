@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_config[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.4 1997/02/14 20:04:55 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/config.h,v 3.5 1997/03/27 17:55:29 sdo Exp $";
 
 
 /* define GROK_SNOOP if you want tcptrace to understand the output
@@ -35,8 +35,8 @@ static char const rcsid_config[] =
 
 
 /* define GROK_TCPDUMP if you want tcptrace to understand the output
-   format format of the LBL tcpdump program (actually, the pcap
-   libraries, which you'll need but are not included here) */
+   format format of the LBL tcpdump program (see the file README.tcpdump
+   for other options) */
 #define GROK_TCPDUMP
 
 

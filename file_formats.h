@@ -26,7 +26,7 @@
  *		ostermann@cs.ohiou.edu
  */
 static char const rcsid_file_formats[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/file_formats.h,v 3.4 1997/03/05 06:22:44 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/file_formats.h,v 3.6 1997/07/24 21:10:59 sdo Exp $";
 
 
 /* 
@@ -57,7 +57,8 @@ struct supported_formats {
 /*	    int		 	*ptlen,					*/
 /*	    void		**pphys,				*/
 /*	    int			*pphystype,				*/
-/*	    struct ip		**ppip)					*/
+/*	    struct ip		**ppip,					*/
+/*	    void		**pplast)				*/
 /*   the reader function should return 0 at EOF and 1 otherwise		*/
 /* This routine must return ONLY IP packets, but they need not all be	*/
 /* TCP packets (if not, they're ignored).				*/

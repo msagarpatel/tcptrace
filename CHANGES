@@ -49,4 +49,40 @@
   fixed minor printing bug, 1323 flags printed wrong
   fixed snoop and netm so that they worked on PC's
 	(more byte sex problems)
+3.2.10 - Thu Mar 27, 1997
+  Mark "pushed" segments on TSG plots
+    top arrow is red instead of white
+  Compute slow-start window size (should be one except for "new" tcp's)
+  Compute estimated congestion window
+3.2.11a - Mon Mar 31, 1997
+  Fixed bug is TS options are not 4-byte aligned
+  Fixed tick printing (bad % value) for HUGE files (millions of packets)
      
+3.2.12a - Thu Apr 24, 1997
+  Fixed bug for file with large snap length
+     
+3.2.13a - Mon Apr 28, 1997
+  Big fix for Rob Austein <sra@epilogue.com>
+  otherdir->ack being initialized incorrectly in trace.c at SYN time
+     
+3.3.0 - Mon Jul 14, 1997
+  Added modules support
+    Included http module for NASA
+  Backed out delete of libpcap, causes too many problems
+  Now using libpcap 0.4
+
+4.0.1 - Tue Jul 15, 1997
+  Ready for next public release (I hope)
+  Verified on the platforms I have access to
+
+4.0.2 - Wed Jul 16, 1997
+  Added '-W' option to turn off Mark's estimated Cwin stuff, it's not
+    generally useful
+  Added raw packet printing to mod_http
+
+4.0.3 - Thu Jul 24, 1997
+  Fixed tcpdump.c to work with lastest libpcap
+   (can no longer assume that header is aligned :-(  )
+  Added plast into all packet reading routines to better check for the end
+   of packets
+  Added fix from Kacheong Poon for sack truncation problem

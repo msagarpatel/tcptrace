@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.10 1997/03/05 06:24:56 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/trace.c,v 3.12 1997/07/24 21:34:10 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -82,6 +82,7 @@ char *out_order_color	= "pink";
 char *text_color	= "magenta";
 char *default_color	= "white";
 char *synfin_color	= "orange";
+char *push_color	= "white";	/* top arrow for PUSHed segments */
 
 
 /* return elapsed time in microseconds */
@@ -209,7 +210,7 @@ NewTTP(
 
     /* grab the address from this packet */
     CopyAddr(&ptp->addr_pair, pip->ip_src, pip->ip_dst,
-	     ptcp->th_sport, ptcp->th_dport);
+	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
 
     ptp->a2b.time.tv_sec = -1;
     ptp->b2a.time.tv_sec = -1;
@@ -273,7 +274,7 @@ FindTTP(
 
     /* grab the address from this packet */
     CopyAddr(&tp_in.addr_pair, pip->ip_src, pip->ip_dst,
-	     ptcp->th_sport, ptcp->th_dport);
+	     ntohs(ptcp->th_sport), ntohs(ptcp->th_dport));
 
     /* grab the hash value (already computed by CopyAddr) */
     hval = tp_in.addr_pair.hash % HASH_TABLE_SIZE;
@@ -341,7 +342,7 @@ FindTTP(
      
  
 
-void
+tcp_pair *
 dotrace(
     struct ip *pip,
     void *plast)
@@ -352,7 +353,7 @@ dotrace(
     unsigned	int tcp_length;
     unsigned	int tcp_data_length;
     u_long	start;
-    unsigned	int end;
+    u_long	end;
     tcb		*thisdir;
     tcb		*otherdir;
     tcp_pair	tp_in;
@@ -362,6 +363,12 @@ dotrace(
     Bool	retrans;
     int		retrans_num_bytes;
     Bool	out_order;  /* out of order */
+    u_short	th_sport;	/* source port */
+    u_short	th_dport;	/* destination port */
+    tcp_seq	th_seq;		/* sequence number */
+    tcp_seq	th_ack;		/* acknowledgement number */
+    u_short	th_win;		/* window */
+    short	ip_len;		/* total length */
 
     /* find the start of the TCP header */
     ptcp = (struct tcphdr *) ((char *)pip + 4*pip->ip_hl);
@@ -372,17 +379,17 @@ dotrace(
 	    fprintf(stderr,"TCP packet %d truncated too short to trace, ignored\n",
 		    pnum);
 	++ctrunc;
-	return;
+	return(NULL);
     }
 
 
-    /* convert the interesting fields to local byte order */
-    ptcp->th_seq   = ntohl(ptcp->th_seq);
-    ptcp->th_ack   = ntohl(ptcp->th_ack);
-    ptcp->th_sport = ntohs(ptcp->th_sport);
-    ptcp->th_dport = ntohs(ptcp->th_dport);
-    ptcp->th_win   = ntohs(ptcp->th_win);
-    pip->ip_len    = ntohs(pip->ip_len);
+    /* convert interesting fields to local byte order */
+    th_seq   = ntohl(ptcp->th_seq);
+    th_ack   = ntohl(ptcp->th_ack);
+    th_sport = ntohs(ptcp->th_sport);
+    th_dport = ntohs(ptcp->th_dport);
+    th_win   = ntohs(ptcp->th_win);
+    ip_len   = ntohs(pip->ip_len);
 
     /* make sure this is one of the connections we want */
     ptp_save = FindTTP(pip,ptcp,&dir);
@@ -390,7 +397,7 @@ dotrace(
     ++packet_count;
 
     if (ptp_save == NULL) {
-	return;
+	return(NULL);
     }
 
     ++trace_count;
@@ -404,12 +411,12 @@ dotrace(
 
     /* if we're ignoring this connection, do no further processing */
     if (ptp_save->ignore_pair) {
-	return;
+	return(ptp_save);
     }
 
     /* grab the address from this packet */
     CopyAddr(&tp_in.addr_pair, pip->ip_src, pip->ip_dst,
-	     ptcp->th_sport, ptcp->th_dport);
+	     th_sport, th_dport);
 
     /* figure out which direction this packet is going */
     if (dir == A2B) {
@@ -453,7 +460,7 @@ dotrace(
     }
 
     /* calculate data length */
-    tcp_length = pip->ip_len - (4 * pip->ip_hl);
+    tcp_length = ip_len - (4 * pip->ip_hl);
     tcp_data_length = tcp_length - (4 * ptcp->th_off);
 
     /* SYN and FIN are really data, too (sortof) */
@@ -491,7 +498,7 @@ dotrace(
     }
 
     /* calc. data range */
-    start = ptcp->th_seq;
+    start = th_seq;
     end = start + tcp_data_length;
 
     /* set minimum seq */
@@ -504,7 +511,7 @@ dotrace(
     /* record sequence limits */
     if (SYN_SET(ptcp)) {
 	thisdir->syn = start;
-	thisdir->ack = start;
+	otherdir->ack = start;  /* bug fix for Rob Austein <sra@epilogue.com> */
     }
     if (FIN_SET(ptcp))
 	thisdir->fin = start;
@@ -522,7 +529,7 @@ dotrace(
 
     /* do rtt stats */
     if (ACK_SET(ptcp)) {
-	ack_in(otherdir,ptcp->th_ack);
+	ack_in(otherdir,th_ack);
     }
 
 
@@ -576,7 +583,15 @@ dotrace(
 	    if (retrans)
 		plotter_perm_color(from_tsgpl, retrans_color);
 	    plotter_darrow(from_tsgpl, current_time, start);
-	    plotter_uarrow(from_tsgpl, current_time, end);
+	    if (PUSH_SET(ptcp)) {
+		/* colored diamond is PUSH */
+		plotter_temp_color(from_tsgpl, push_color);
+		plotter_diamond(from_tsgpl, current_time, end);
+		plotter_temp_color(from_tsgpl, push_color);
+		plotter_dot(from_tsgpl, current_time, end);
+	    } else {
+		plotter_uarrow(from_tsgpl, current_time, end);
+	    }
 	    plotter_line(from_tsgpl, current_time, start, current_time, end);
 /* 	    if (retrans) */
 /* 		plotter_perm_color(from_tsgpl, default_color); */
@@ -586,7 +601,7 @@ dotrace(
 
     /* check for RESET */
     if (RESET_SET(ptcp)) {
-	unsigned int ack = ptcp->th_ack;
+	unsigned int ack = th_ack;
 
 	if (to_tsgpl != NO_PLOTTER) {
 	    plotter_temp_color(to_tsgpl, text_color);
@@ -602,14 +617,14 @@ dotrace(
 	}
 	if (ACK_SET(ptcp))
 	    ++thisdir->ack_pkts;
-	return;
+	return(ptp_save);
     }
 
     
     /* draw the ack and win in the other plotter */
     if (ACK_SET(ptcp)) {
-	unsigned int ack = ptcp->th_ack;
-	unsigned int win = ptcp->th_win << thisdir->window_scale;
+	unsigned int ack = th_ack;
+	unsigned int win = th_win << thisdir->window_scale;
 	unsigned int winend;
 
 	winend = ack + win;
@@ -681,7 +696,40 @@ dotrace(
 	thisdir->time = current_time;
 	thisdir->ack = ack;
 	thisdir->windowend = winend;
+    }  /* end ACK_SET(ptcp) */
+
+    /* do stats for initial window (first slow start) */
+    /* (if there's data in this and we've NEVER seen */
+    /*  an ACK coming back from the other side) */
+    /* this is for Mark Allman for slow start testing -- Mon Mar 10, 1997 */
+    if (!otherdir->data_acked && ACK_SET(ptcp)
+	&& ((otherdir->syn+1) != th_ack)) {
+	otherdir->data_acked = TRUE;
     }
+    if ((tcp_data_length > 0) && (!thisdir->data_acked)) {
+	if (!retrans) {
+	    /* don't count it if it was retransmitted */
+	    thisdir->initialwin_bytes += tcp_data_length;
+	    thisdir->initialwin_segs += 1;
+	}
+    }
+
+    /* do stats for congestion window (estimated) */
+    /* estimate the congestion window as the number of outstanding */
+    /* un-acked bytes */
+    if (!SYN_SET(ptcp) && !out_order && !retrans) {
+	u_long cwin = end - otherdir->ack;
+
+	if (cwin > thisdir->cwin_max)
+	    thisdir->cwin_max = cwin;
+	if ((cwin > 0) &&
+	    ((thisdir->cwin_min == 0) ||
+	     (cwin < thisdir->cwin_min)))
+	    thisdir->cwin_min = cwin;
+	thisdir->cwin_tot += cwin;
+    }
+
+    return(ptp_save);
 }
 
 
@@ -829,6 +877,28 @@ OnlyConn(
 }
 
 
+/* get a long (4 byte) option (to avoid address alignment problems) */
+static u_long
+get_long_opt(
+    void *ptr)
+{
+    u_long l;
+    memcpy(&l,ptr,sizeof(u_long));
+    return(l);
+}
+
+
+/* get a short (2 byte) option (to avoid address alignment problems) */
+static u_short
+get_short_opt(
+    void *ptr)
+{
+    u_short s;
+    memcpy(&s,ptr,sizeof(u_short));
+    return(s);
+}
+
+
 struct tcp_options *
 ParseOptions(
     struct tcphdr *ptcp,
@@ -878,7 +948,7 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 	  case TCPOPT_NOP: ++popt; break;
 	  case TCPOPT_MAXSEG:
 	    CHECK_O_LEN("TCPOPT_MAXSEG");
-	    tcpo.mss = ntohs(*((u_short *)(popt+2)));
+	    tcpo.mss = ntohs(get_short_opt(popt+2));
 	    popt += *plen;
 	    break;
 	  case TCPOPT_WS:
@@ -888,8 +958,8 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 	    break;
 	  case TCPOPT_TS:
 	    CHECK_O_LEN("TCPOPT_TS");
-	    tcpo.tsval = ntohl(*((u_long *)(popt+2)));
-	    tcpo.tsecr = ntohl(*((u_long *)(popt+6)));
+	    tcpo.tsval = ntohl(get_long_opt(popt+2));
+	    tcpo.tsecr = ntohl(get_long_opt(popt+6));
 	    popt += *plen;
 	    break;
 	  case TCPOPT_SACK_PERM:
@@ -911,7 +981,7 @@ ParseOptions: packet %d %s option cut short by snap length, skipping other optio
 		memcpy(&tcpo.sacks[(unsigned)tcpo.sack_count], psack,
 		       sizeof(sack_block));
 		++psack;
-		if ((unsigned)psack > (unsigned)plast) {
+		if ((unsigned)psack > ((unsigned)plast+1)) {
 		    /* this SACK block isn't all here */
 		    if (printtrunc)
 			fprintf(stderr,

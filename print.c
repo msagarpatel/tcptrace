@@ -28,7 +28,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 1996 -- Ohio University.  All rights reserved.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.6 1997/01/23 17:58:48 sdo Exp $";
+    "@(#)$Header: /home/sdo/src/tcptrace/RCS/print.c,v 3.10 1997/07/24 21:11:47 sdo Exp $";
 
 
 /* 
@@ -47,6 +47,7 @@ static char *ParenHostName(ipaddr);
 
 
 
+/* Unix format: "Fri Sep 13 00:00:00 1986\n" */
 char *
 ts2ascii(
     struct timeval	*ptime)
@@ -55,6 +56,9 @@ ts2ascii(
 	struct tm *ptm;
 	char *now;
 	int decimal;
+
+	if ((ptime->tv_sec == 0) && (ptime->tv_usec == 0))
+	    return("        <the epoch>       ");
 
 	ptm = localtime(&ptime->tv_sec);
 	now = asctime(ptm);
@@ -115,7 +119,7 @@ printip_packet(
 	(ntohs(pip->ip_p) == IPPROTO_EGP)?"(EGP)":
 	"");
 
-    printf("\t  IPHLEN: %d\n", pip->ip_hl*4);
+    printf("\t    HLEN: %d\n", pip->ip_hl*4);
     printf("\t     TTL: %d\n", pip->ip_ttl);
     printf("\t     LEN: %d\n", ntohs(pip->ip_len));
     printf("\t      ID: %d\n", ntohs(pip->ip_id));
@@ -210,10 +214,9 @@ printpacket(
      int		tlen,
      void		*phys,
      int		phystype,
-     struct ip		*pip)
+     struct ip		*pip,
+     void 		*plast)
 {
-    void *plast = NULL;
-
     if (len == tlen)
         printf("\tPacket Length: %d\n", len);
     else
@@ -224,7 +227,6 @@ printpacket(
     switch(phystype) {
       case PHYS_ETHER:
 	printeth_packet(phys);
-	plast = (void *)((unsigned)pip + tlen - sizeof(struct ether_header) - 1);
 	break;
       default:
 	printf("\tPhysical layer: %d (not understood)\n", phystype);
@@ -270,6 +272,44 @@ ParenHostName(
 
     sprintf(buf,"(%s)",pname);
     return(buf);
+}
+
+
+void
+PrintRawData(
+    char *label,
+    void *pfirst,
+    void *plast)
+{
+    int lcount = 0;
+    int count = (unsigned)plast - (unsigned)pfirst + 1;
+    u_char *pch = pfirst;
+
+    if (count <= 0)
+	return;
+
+    printf("========================================\n");
+    printf("%s (%d bytes):\n\t", label, count);
+
+    while (pch <= (u_char *) plast) {
+	if ((*pch == '\r') && (*(pch+1) == '\n')) {
+	    printf("\n\t");
+	    ++pch;
+	    lcount = 0;
+	} else if (isprint(*pch)) {
+	    putchar(*pch);
+	    lcount+=1;
+	} else {
+	    printf("\\%03o", *pch);
+	    lcount+=3;
+	}
+	if (lcount > 60) {
+	    printf("\n\t");
+	    lcount = 0;
+	}
+	++pch;
+    }
+    printf("\n");
 }
 
 
