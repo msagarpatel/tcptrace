@@ -14,7 +14,7 @@ These sources have been tested with the 0.4 version of libpcap...
 
 The pcap README file:
 
-@(#) $Header: /home/sdo/src/tcptrace/src/RCS/README.pcap,v 5.1 1998/12/02 04:38:38 sdo Exp $ (LBL)
+@(#) $Header: /usr/local/cvs/tcptrace/README.pcap,v 5.1 1998/12/02 04:38:38 sdo Exp $ (LBL)
 
 LIBPCAP 0.4
 Lawrence Berkeley National Laboratory

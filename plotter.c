@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/plotter.c,v 5.3 1999/06/22 21:35:05 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/plotter.c,v 5.17 2002/07/26 07:22:49 alakhian Exp $";
 
 #include "tcptrace.h"
 
@@ -39,6 +65,14 @@ struct plotter_info {
     tcb *p2plast;		/* the TCB that this goes with (if any) */
     timeval zerotime;		/* first time stamp in this plot (see -z) */
     char *filename;		/* redundant copy of name for debugging */
+    Bool header_done;           /* Flag indicating plotter header written to file */
+    Bool axis_switched;         /* Switch x & y axis types.
+				 * (Needed for Time Line Charts,
+				 * Default = FALSE)
+				 */
+    char *title;                /* Plotter title */
+    char *xlabel;               /* Plotter x-axis label */
+    char *ylabel;               /* Plotter y-axis label */
 };
 
 
@@ -54,15 +88,17 @@ static struct plotter_info *pplotters;
 static char *xp_timestamp(PLOTTER pl, struct timeval time);
 static char *TSGPlotName(tcb *plast, PLOTTER, char *suffix);
 static void DoPlot(PLOTTER pl, char *fmt, ...);
-
-
-
-
+static void WritePlotHeader(PLOTTER pl);
+static void CallDoPlot(PLOTTER pl, char *plot_cmd, int plot_argc, ...);
 
 
 /*
  * Return a string suitable for use as a timestamp in the xplot output.
- * (Currently rounds to the nearest 1/10 millisecond)
+ * sdo fix: originally, we were just plotting to the accuracy of 1/10 ms
+ *   this was mostly to help keep the .xpl files from being too large.  However,
+ *   on faster networks this just isn't enough, so we'll now use all 6 digits
+ *   of the microsecond counter.  Note that there's no guarantee that the
+ *   timestamps are really all that accurate!
  */
 static char *
 xp_timestamp(
@@ -75,10 +111,13 @@ xp_timestamp(
     unsigned usecs;
     unsigned decimal;
     char *pbuf;
+    struct plotter_info *ppi;
+   
+    ppi = &pplotters[pl];
+   
+    /* see if we're graphing from "0" OR if the axis type is switched */
+    if (graph_time_zero || ppi->axis_switched) {
 
-    /* see if we're graphing from "0" */
-    if (graph_time_zero) {
-	struct plotter_info *ppi = &pplotters[pl];
 
 	if (ZERO_TIME(&ppi->zerotime)) {
 	    /* set "zero point" */
@@ -102,13 +141,14 @@ increasing time order.  Try without the '-z' flag\n",
     /* calculate time components */
     secs = time.tv_sec;
     usecs = time.tv_usec;
-    decimal = usecs / 100;  /* just truncate, faster */
+    decimal = usecs;
 
     /* use one of 4 rotating static buffers (for multiple calls per printf) */
     bufix = (bufix+1)%4;
     pbuf = bufs[bufix];
 
-    sprintf(pbuf,"%u.%04u",secs,decimal);
+    snprintf(pbuf,sizeof(bufs[bufix]),"%u.%06u",secs,decimal);
+
     return(pbuf);
 }
 
@@ -146,10 +186,13 @@ plotter_makemore(void)
 /* max number of letters in endpoint name */
 /* (8 allows 26**8 different endpoints (209,000,000,000)
     probably plenty for now!!!!!) */
-#define MAX_HOSTLETTER_LEN 8
+	
+/* #define MAX_HOSTLETTER_LEN 8 
+   Moving this definition to tcptrace.h so other modules can use it. */
+
 char *
 HostLetter(
-     unsigned ix)
+     llong ix)
 {
     static char name[MAX_HOSTLETTER_LEN+1];
     static char *pname;
@@ -160,22 +203,20 @@ HostLetter(
     while (pname >= name) {
 	unsigned digit = ix % 26;
 	*pname-- = 'a'+digit;
-	ix = ix / 26;
-	if (ix == 0)
+	ix = (ix / 26) - 1;
+	if (ix == -1)
 	    return(pname+1);
     }
-
-    fprintf(stderr,"Fatal, too many hosts to name (max length %d)\n",
-	    MAX_HOSTLETTER_LEN);
-    exit(-1);
-    return(NULL);  /* NOTREACHED */
+   fprintf(stderr,"Fatal, too many hosts to name (max length %d)\n\nNOTE:\nIf you are using gcc version 2.95.3, then this may be a compiler bug. This particular version\nis known to generate incorrect assembly code when used with CCOPT=-O2.\nSuggested fixes are:\n   1. Update gcc to the latest version and recompile tcptrace.\n   2. Use the same version of gcc, but edit the tcptrace Makefile, setting CCOPT=-O instead of\n      CCOPT=-O2, and then recompile tcptrace.\nEither of these steps should hopefully fix the problem.\n\n", MAX_HOSTLETTER_LEN);
+   exit(-1);
+   return(NULL);  /* NOTREACHED */
 }
 
 
 char *
 NextHostLetter(void)
 {
-    static int count = 0;
+    static llong count = 0;
     return(HostLetter(count++));
 }
 
@@ -187,9 +228,10 @@ TSGPlotName(
     PLOTTER pl,
     char *suffix)
 {
-    static char filename[25];
+	static char filename[25]; 
 
-    sprintf(filename,"%s2%s%s",
+
+    snprintf(filename,sizeof(filename),"%s2%s%s",
 	    plast->host_letter, plast->ptwin->host_letter, suffix);
 
     return(filename);
@@ -223,11 +265,15 @@ DoPlot(
     }
 
     ppi = &pplotters[pl];
-
+   
     if ((f = ppi->fplot) == NULL) {
 	va_end(ap);
 	return;
     }
+   
+    /* Write the plotter header if not already written */
+    if(!ppi->header_done)
+     WritePlotHeader(pl);
 
     Mvfprintf(f,fmt,ap);
     if (temp_color) {
@@ -267,7 +313,7 @@ new_plotter(
 	filename = TSGPlotName(plast,pl,suffix);
     else if (suffix != NULL) {
 	char buf[100];
-	sprintf(buf,"%s%s", filename, suffix);
+	snprintf(buf,sizeof(buf),"%s%s", filename, suffix);
 	filename = buf;
     }
 
@@ -279,26 +325,17 @@ new_plotter(
 	return(NO_PLOTTER);
     }
 
-    /* graph coordinates... */
-    /*  X coord is timeval unless graph_time_zero is true */
-    /*  Y is signed except when it's a sequence number */
-    /* ugly hack -- unsigned makes the graphs hard to work with and is
-       only needed for the time sequence graphs */
-    /* suggestion by Michele Clark at UNC - make them double instead */
-    Mfprintf(f,"%s %s\n",
-	     graph_time_zero?"dtime":"timeval",
-	     ((strcmp(ylabel,"sequence number") == 0)&&(!graph_seq_zero))?
-	     "double":"signed");
-
-    if (show_title)
-        Mfprintf(f,"title\n%s\n", title);
-    Mfprintf(f,"xlabel\n%s\n", xlabel);
-    Mfprintf(f,"ylabel\n%s\n", ylabel);
-
     ppi->fplot = f;
     ppi->p2plast = plast;
     ppi->filename = strdup(filename);
-
+    ppi->axis_switched = FALSE;
+    ppi->header_done = FALSE;
+   
+    /* Save these fields to be writtn to the plotter header later in DoPlot() */
+    ppi->title  = strdup(title);
+    ppi->xlabel = strdup(xlabel);
+    ppi->ylabel = strdup(ylabel);
+ 
     return(pl);
 }
 
@@ -309,13 +346,31 @@ plotter_done(void)
     PLOTTER pl;
     MFILE *f;
     char *fname;
+	static struct dstring *xplot_cmd_buff=NULL;
 
-    for (pl = 0; pl < plotter_ix; ++pl) {
+	if(plotter_ix>0) {
+		if(xplot_all_files) {
+			xplot_cmd_buff=DSNew();
+			DSAppendString(xplot_cmd_buff,"xplot");
+			DSAppendString(xplot_cmd_buff," ");
+			if(xplot_args!=NULL) {
+				DSAppendString(xplot_cmd_buff,xplot_args);
+				DSAppendString(xplot_cmd_buff," ");
+			}
+		}
+	}
+
+    for (pl = 0; pl <= plotter_ix; ++pl) {
 	struct plotter_info *ppi = &pplotters[pl];
 	
+
 	if ((f = ppi->fplot) == NULL)
 	    continue;
-	
+
+        /* Write the plotter header if not already written */
+        if(!ppi->header_done)
+	 WritePlotHeader(pl);
+       
 	if (!ignore_non_comp ||
 	    ((ppi->p2plast != NULL) && (ConnComplete(ppi->p2plast->ptp)))) {
 	    Mfprintf(f,"go\n");
@@ -329,7 +384,24 @@ plotter_done(void)
 	    if (unlink(fname) != 0)
 		perror(fname);
 	}
+
+	if(xplot_all_files){
+		if(output_file_dir!=NULL) {
+			DSAppendString(xplot_cmd_buff,output_file_dir);
+			DSAppendString(xplot_cmd_buff,"/");
+		}
+		DSAppendString(xplot_cmd_buff,ppi->filename);
+		DSAppendString(xplot_cmd_buff," ");	
+	}
     }
+
+	if(plotter_ix>0) {
+		if(xplot_all_files) {
+			fprintf(stdout,"%s\n",DSVal(xplot_cmd_buff));
+			system(DSVal(xplot_cmd_buff));
+			DSDestroy(&xplot_cmd_buff);
+		}
+	}
 }
 
 
@@ -349,8 +421,8 @@ plotter_perm_color(
     PLOTTER pl,
     char *color)
 {
-    if (colorplot)
-	DoPlot(pl,"%s",color);
+   if (colorplot)
+	CallDoPlot(pl, color, 0);
 }
 
 
@@ -362,9 +434,7 @@ plotter_line(
     struct timeval	t2,
     u_long		x2)
 {
-    DoPlot(pl,"line %s %u %s %u",
-	   xp_timestamp(pl,t1), x1,
-	   xp_timestamp(pl,t2), x2);
+    CallDoPlot(pl,"line", 4, t1, x1, t2, x2);
 }
 
 
@@ -376,9 +446,7 @@ plotter_dline(
     struct timeval	t2,
     u_long		x2)
 {
-    DoPlot(pl,"dline %s %u %s %u",
-           xp_timestamp(pl,t1), x1,
-           xp_timestamp(pl,t2), x2);
+    CallDoPlot(pl,"dline", 4, t1, x1, t2, x2);
 }
 
 
@@ -388,7 +456,7 @@ plotter_diamond(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"diamond %s %u", xp_timestamp(pl,t), x);
+    CallDoPlot(pl,"diamond", 2, t, x);
 }
 
 
@@ -398,7 +466,7 @@ plotter_dot(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"dot %s %u", xp_timestamp(pl,t), x);
+    CallDoPlot(pl,"dot", 2, t, x);
 }
 
 
@@ -408,7 +476,7 @@ plotter_plus(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"plus %s %u", xp_timestamp(pl,t), x);
+    CallDoPlot(pl,"plus", 2, t, x);
 }
 
 
@@ -418,7 +486,7 @@ plotter_box(
     struct timeval	t,
     u_long		x)
 {
-    DoPlot(pl,"box %s %u", xp_timestamp(pl,t), x);
+    CallDoPlot(pl,"box", 2, t, x);
 }
 
 
@@ -430,7 +498,9 @@ plotter_arrow(
     u_long		x,
     char	dir)
 {
-    DoPlot(pl,"%carrow %s %u", dir, xp_timestamp(pl,t), x);
+    char arrow_type[7];
+    snprintf(arrow_type, sizeof(arrow_type), "%carrow", dir);
+    CallDoPlot(pl, arrow_type, 2, t, x);      
 }
 
 
@@ -481,7 +551,9 @@ plotter_tick(
     u_long		x,
     char		dir)
 {
-    DoPlot(pl,"%ctick %s %u", dir, xp_timestamp(pl,t), x);
+    char tick_type[6];
+    snprintf(tick_type, sizeof(tick_type), "%ctick", dir);
+    CallDoPlot(pl, tick_type, 2, t, x);      
 }
 
 
@@ -568,14 +640,26 @@ plotter_text(
     char		*where,
     char		*str)
 {
-    DoPlot(pl,"%stext %s %u", where, xp_timestamp(pl,t), x);
+    char text_type[6];
+    snprintf(text_type, sizeof(text_type), "%stext", where);
+
+    CallDoPlot(pl, text_type, 2, t, x);
     /* fix by Bill Fenner - Wed Feb  5, 1997, thanks */
     /* This is a little ugly.  Text commands take 2 lines. */
     /* A temporary color could have been */
     /* inserted after that line, but would NOT be inserted after */
     /* the next line, so we'll be OK.  I can't think of a better */
     /* way right now, and this works fine (famous last words) */
-    DoPlot(pl,"%s", str);
+    CallDoPlot(pl, str, 0);
+}
+
+void
+plotter_invisible(
+    PLOTTER pl,
+    struct timeval	t,
+    u_long		x)
+{
+    CallDoPlot(pl,"invisible", 2, t, x);
 }
 
 
@@ -680,3 +764,158 @@ extend_line(
     pline->last_time = xval;
     pline->last_y = yval;
 }
+
+/* This function may be called with 0, 2 or 4 arguments depending on plot command. */
+static void
+CallDoPlot(
+    PLOTTER pl,
+    char *plot_cmd,
+    int plot_argc,
+    ...)	   
+{
+   struct timeval t1;
+   u_long x1 = 0;
+   struct timeval t2;
+   u_long x2 = 0;	   
+   va_list ap;
+   struct plotter_info *ppi;
+   char fmt[200];
+   
+   if (pl == NO_PLOTTER)
+     return;
+
+   if (pl > plotter_ix) {
+      fprintf(stderr,"Illegal plotter: %d\n", pl);
+      exit(-1);
+   }
+
+   ppi = &pplotters[pl];
+
+   /* Get the arguments from the variable list */
+   va_start(ap, plot_argc);
+   if(plot_argc > 0)
+     {
+	t1 = va_arg(ap, struct timeval);
+	x1 = va_arg(ap, u_long);
+     }
+   if(plot_argc > 2)
+     {
+	t2 = va_arg(ap, struct timeval);
+	x2 = va_arg(ap, u_long);
+     }
+   va_end(ap);
+
+   memset(fmt, 0, sizeof(fmt));
+   
+   if(ppi->axis_switched) {
+      switch(plot_argc) {
+       case 0:
+	 snprintf(fmt, sizeof(fmt), "%s", plot_cmd);
+	 DoPlot(pl, fmt);
+	 break;
+       case 2:
+	 snprintf(fmt, sizeof(fmt), "%s %%u -%%s", plot_cmd);
+	 DoPlot(pl, fmt,
+		x1, xp_timestamp(pl,t1));
+	 break;
+       case 4:
+	 snprintf(fmt, sizeof(fmt), "%s %%u -%%s %%u -%%s", plot_cmd);
+	 DoPlot(pl, fmt,
+		x1, xp_timestamp(pl,t1),
+		x2, xp_timestamp(pl,t2));
+	 break;
+       default:
+	 fprintf(stderr, "CallDoPlot: Illegal number of arguments (%d)\n", plot_argc);
+      }
+   }
+   else {
+      switch(plot_argc) {
+       case 0:
+	 snprintf(fmt, sizeof(fmt), "%s", plot_cmd);
+	 DoPlot(pl, fmt);
+	 break;
+       case 2:
+	 snprintf(fmt, sizeof(fmt), "%s %%s %%u", plot_cmd);
+	 DoPlot(pl, fmt,
+		xp_timestamp(pl,t1), x1);
+	 break;
+       case 4:
+	 snprintf(fmt, sizeof(fmt), "%s %%s %%u %%s %%u", plot_cmd);
+	 DoPlot(pl, fmt,
+		xp_timestamp(pl,t1), x1,
+		xp_timestamp(pl,t2), x2);
+	 break;
+       default:
+	 fprintf(stderr, "CallDoPlot: Illegal number of arguments (%d)\n", plot_argc);
+      }
+   }
+   
+   return;
+}
+
+static void
+WritePlotHeader(
+    PLOTTER pl)
+{
+   MFILE *f = NULL;
+   struct plotter_info *ppi;
+
+   if (pl == NO_PLOTTER)
+     return;
+
+   if (pl > plotter_ix) {
+      fprintf(stderr,"Illegal plotter: %d\n", pl);
+      exit(-1);
+   }
+
+   ppi = &pplotters[pl];
+   
+   if ((f = ppi->fplot) == NULL)
+     return;
+
+   if(ppi->axis_switched) {   
+      /* Header for the Time Line Charts */
+      Mfprintf(f,"%s %s\n", "unsigned", "dtime");
+   }
+   else {
+      /* Header for all other plots */
+      /* graph coordinates... */
+      /*  X coord is timeval unless graph_time_zero is true */
+      /*  Y is signed except when it's a sequence number */
+      /* ugly hack -- unsigned makes the graphs hard to work with and is
+       only needed for the time sequence graphs */
+      /* suggestion by Michele Clark at UNC - make them double instead */
+      Mfprintf(f,"%s %s\n",
+	       graph_time_zero?"dtime":"timeval",
+	       ((strcmp(ppi->ylabel,"sequence number") == 0)&&(!graph_seq_zero))?
+	       "double":"signed");
+   }
+   
+   if (show_title) {
+      if (xplot_title_prefix)
+	Mfprintf(f,"title\n%s %s\n",
+		 ExpandFormat(xplot_title_prefix),
+		 ppi->title);
+      else
+	Mfprintf(f,"title\n%s\n", ppi->title);
+   }
+   
+   Mfprintf(f,"xlabel\n%s\n", ppi->xlabel);
+   Mfprintf(f,"ylabel\n%s\n", ppi->ylabel);
+   
+   /* Indicate that the header has now been written to the plotter file */
+   ppi->header_done = TRUE;
+   
+   return;
+}
+
+/* Switch the x and y axis type (Needed for Time Line Charts. Default = FLASE) */
+void plotter_switch_axis(
+    PLOTTER pl,
+    Bool flag)
+{
+   struct plotter_info *ppi = &pplotters[pl];
+   
+   ppi->axis_switched = flag;
+}
+

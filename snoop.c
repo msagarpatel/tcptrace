@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/snoop.c,v 5.6 1999/09/15 14:17:44 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/snoop.c,v 5.13 2002/08/30 19:53:10 sdo Exp $";
 
 
 /* 
@@ -42,25 +68,34 @@ static char const rcsid[] =
 
 #ifdef GROK_SNOOP
 
+/* Defining SYS_STDIN which is fp for Windows and stdin for all other systems */
+#ifdef __WIN32
+static FILE *fp;
+#define SYS_STDIN fp
+#else
+#define SYS_STDIN stdin
+#endif /* __WIN32 */
+
 /* information necessary to understand Solaris Snoop output */
 struct snoop_file_header {
     char		format_name[8];	/* should be "snoop\0\0\0" */
-    u_int		snoop_version;	/* current version is "2" */
-    u_int		mac_type;	/* hardware type */
+    tt_uint32		snoop_version;	/* current version is "2" */
+    tt_uint32		mac_type;	/* hardware type */
 };
 /* snoop hardware types that we understand */
 /* from sys/dlpi.h */
 /*  -- added prefix SNOOP_ to avoid name clash */
 #define	SNOOP_DL_ETHER	0x4	/* Ethernet Bus */
 #define	SNOOP_DL_FDDI	0x08	/* Fiber Distributed data interface */
+#define	SNOOP_DL_ATM	0x12	/* from Sun's "atmsnoop" */
 
 struct snoop_packet_header {
-    unsigned int	len;
-    unsigned int	tlen;
-    unsigned int	blen;
-    unsigned int	unused3;
-    unsigned int	secs;
-    unsigned int	usecs;
+    tt_uint32	len;
+    tt_uint32	tlen;
+    tt_uint32	blen;
+    tt_uint32	unused3;
+    tt_uint32	secs;
+    tt_uint32	usecs;
 };
 
 
@@ -117,7 +152,7 @@ pread_snoop(
 	hlen = sizeof(struct snoop_packet_header);
 
 	/* read the packet header */
-	if ((rlen=fread(&hdr,1,hlen,stdin)) != hlen) {
+	if ((rlen=fread(&hdr,1,hlen,SYS_STDIN)) != hlen) {
 	    if (rlen != 0)
 		fprintf(stderr,"Bad snoop packet header\n");
 	    return(0);
@@ -139,7 +174,7 @@ pread_snoop(
 
 	if (snoop_mac_type == SNOOP_DL_ETHER) {
 	    /* read the ethernet header */
-	    rlen=fread(pep,1,sizeof(struct ether_header),stdin);
+	    rlen=fread(pep,1,sizeof(struct ether_header),SYS_STDIN);
 	    if (rlen != sizeof(struct ether_header)) {
 		fprintf(stderr,"Couldn't read ether header\n");
 		return(0);
@@ -155,23 +190,57 @@ pread_snoop(
 		return(0);
 	    }
 
+	    /* add VLAN support for John Tysko */
+	    if ((ntohs(pep->ether_type) == ETHERTYPE_VLAN) && (len >= 4)){
+		struct {
+		    tt_uint16 vlan_num;
+		    tt_uint16 vlan_proto;
+		} vlanh;
+
+		/* adjust packet length */
+		len -= 4;
+
+		/* read the vlan header */
+		if ((rlen=fread(&vlanh,1,sizeof(vlanh),SYS_STDIN)) != sizeof(vlanh)) {
+		    perror("pread_snoop: seek past vlan header");
+		}
+
+		if ((ntohs(vlanh.vlan_proto) == ETHERTYPE_IP) ||
+		    (ntohs(vlanh.vlan_proto) == ETHERTYPE_IPV6)) {
+		    /* make it appear to have been IP all along */
+		    /* (note that both fields are still in N.B.O. */
+		    pep->ether_type = vlanh.vlan_proto;
+		    if (debug > 2)
+			printf("Removing VLAN header (vlan:%x)\n",
+			       vlanh.vlan_num);
+		} else {
+		    if (debug > 2)
+			printf("Skipping a VLAN packet (num:%x proto:%x)\n",
+			       vlanh.vlan_num, vlanh.vlan_proto);
+		}
+
+	    } 
+
+
 	    /* if it's not IP, then skip it */
 	    if ((ntohs(pep->ether_type) != ETHERTYPE_IP) &&
 		(ntohs(pep->ether_type) != ETHERTYPE_IPV6)) {
+
+
 		if (debug > 2)
 		    fprintf(stderr,
 			    "pread_snoop: not an IP packet (ethertype 0x%x)\n",
 			    ntohs(pep->ether_type));
 		/* discard the remainder */
 		/* N.B. fseek won't work - it could be a pipe! */
-		if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
+		if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
 		    perror("pread_snoop: seek past non-IP");
 		}
 
 		continue;
 	    }
 
-	    if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
+	    if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
 		if (rlen != 0 && debug)
 		    fprintf(stderr,
 			    "Couldn't read %d more bytes, skipping last packet\n",
@@ -189,7 +258,7 @@ pread_snoop(
 
 	    /* read in the whole frame and search for IP header */
 	    /* (assumes sizeof(fddi frame) < IP_MAXPACKET, should be true) */
-	    if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
+	    if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
 		if (debug && rlen != 0)
 		    fprintf(stderr,
 			    "Couldn't read %d more bytes, skipping last packet\n",
@@ -198,7 +267,7 @@ pread_snoop(
 	    }
 
 	    /* find the offset of the IP header inside the FDDI frame */
-	    if ((offset = find_ip_fddi((char *)pip_buf,len)) == -1) {
+	    if ((offset = find_ip_fddi((void *)pip_buf,len)) == -1) {
 		/* not found */
 		if (debug)
 		    printf("snoop.c: couldn't find next IP within FDDI\n");
@@ -210,11 +279,69 @@ pread_snoop(
 	    memmove(pip_buf,(char *)pip_buf+offset,len-offset);
 
 	    /* point to first and last char in IP packet */
-	    *ppip  = (struct ip *) ((char *)pip_buf);
+	    *ppip  = (struct ip *) ((void *)pip_buf);
 	    *pplast = (char *)pip_buf+len-offset-1;
 
 	    /* assume it's IP (else find_ip_fddi would have failed) */
 	    pep->ether_type = htons(ETHERTYPE_IP);
+	} else if (snoop_mac_type == SNOOP_DL_ATM) {
+		/* there's a 12 byte header that we don't care about */
+		/* the last 2 of those 12 bytes are the packet type */
+		/* we don't care about hardware header, so we just discard */
+		struct atm_header {
+			u_char junk[10];
+			u_short type;
+		} atm_header;
+
+		/* grab the 12-byte header */
+		rlen=fread(&atm_header,1,sizeof(struct atm_header),SYS_STDIN);
+		if (rlen != sizeof(struct atm_header)) {
+			fprintf(stderr,"Couldn't read ATM header\n");
+			return(0);
+		}
+
+		/* fill in the ethernet type */
+		/* we'll just assume that they're both in the same network
+		   byte order */
+		pep->ether_type = atm_header.type;
+
+		/* read the rest of the packet */
+		len -= sizeof(struct atm_header);
+		if (len >= IP_MAXPACKET) {
+			/* sanity check */
+			fprintf(stderr,
+				"pread_snoop: invalid next packet, IP len is %d, return EOF\n", len);
+
+			return(0);
+		}
+
+		/* if it's not IP, then skip it */
+		if ((ntohs(pep->ether_type) != ETHERTYPE_IP) &&
+		    (ntohs(pep->ether_type) != ETHERTYPE_IPV6)) {
+			if (debug > 2)
+				fprintf(stderr,
+					"pread_snoop: not an IP packet (ethertype 0x%x)\n",
+					ntohs(pep->ether_type));
+			/* discard the remainder */
+			/* N.B. fseek won't work - it could be a pipe! */
+			if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
+				perror("pread_snoop: seek past non-IP");
+			}
+
+			continue;
+		}
+
+		if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
+			if (rlen != 0 && debug)
+				fprintf(stderr,
+					"Couldn't read %d more bytes, skipping last packet\n",
+					len);
+			return(0);
+		}
+
+		*ppip  = (struct ip *) pip_buf;
+		/* last byte in the IP packet */
+		*pplast = (char *)pip_buf+packlen-sizeof(struct ether_header)-1;
 	} else {
 	    printf("snoop hardware type %d not understood\n",
 		   snoop_mac_type);
@@ -242,14 +369,21 @@ pread_snoop(
 /*
  * is_snoop()   is the input file in snoop format??
  */
-pread_f *is_snoop(void)
+pread_f *is_snoop(char *filename)
 {
     struct snoop_file_header buf;
     int rlen;
 
+#ifdef __WIN32
+    if((fp = fopen(filename, "r")) == NULL) {
+       perror(filename);
+       exit(-1);
+    }
+#endif /* __WIN32 */   
+   
     /* read the snoop file header */
-    if ((rlen=fread(&buf,1,sizeof(buf),stdin)) != sizeof(buf)) {
-	rewind(stdin);
+    if ((rlen=fread(&buf,1,sizeof(buf),SYS_STDIN)) != sizeof(buf)) {
+	rewind(SYS_STDIN);
 	return(NULL);
     }
 
@@ -266,11 +400,11 @@ pread_f *is_snoop(void)
     
     /* sanity check on snoop version */
     if (debug) {
-	printf("Snoop version: %d\n", buf.snoop_version);
+	printf("Snoop version: %ld\n", buf.snoop_version);
     }
     if (buf.snoop_version != 2) {
 	printf("\
-Warning! snoop file is version %d.\n\
+Warning! snoop file is version %ld.\n\
 Tcptrace is only known to work with version 2\n",
 	       buf.snoop_version);
     }
@@ -280,16 +414,20 @@ Tcptrace is only known to work with version 2\n",
     switch (buf.mac_type) {
       case SNOOP_DL_ETHER:
 	if (debug)
-	    printf("Snoop hw type: %d (Ethernet)\n", buf.mac_type);
+	    printf("Snoop hw type: %ld (Ethernet)\n", buf.mac_type);
 	break;
       case SNOOP_DL_FDDI:
 	if (debug)
-	    printf("Snoop hw type: %d (FDDI)\n", buf.mac_type);
+	    printf("Snoop hw type: %ld (FDDI)\n", buf.mac_type);
+	break;
+      case SNOOP_DL_ATM:
+	if (debug)
+	    printf("Snoop hw type: %ld (ATM)\n", buf.mac_type);
 	break;
       default:
 	if (debug)
-	    printf("Snoop hw type: %d (unknown)\n", buf.mac_type);
-	printf("snoop hardware type %d not understood\n", buf.mac_type);
+	    printf("Snoop hw type: %ld (unknown)\n", buf.mac_type);
+	printf("snoop hardware type %ld not understood\n", buf.mac_type);
 	exit(-1);
     }
 

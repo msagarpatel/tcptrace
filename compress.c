@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "$Header: /home/sdo/src/tcptrace/src/RCS/compress.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
+    "$Header: /usr/local/cvs/tcptrace/compress.c,v 5.7 2003/03/05 15:23:10 mramadas Exp $";
 
 
 #include "tcptrace.h"
@@ -68,7 +94,8 @@ static int header_length = -1;
 static Bool is_compressed = FALSE;
 static FILE * f_orig_stdin = NULL;
 static int child_pid = -1;
-
+static char *tempfile;
+int posn;
 
 
 static char *FindBinary(
@@ -107,7 +134,7 @@ static char *FindBinary(
 	if (pch_colon)
 	    *pch_colon = '\00';
 
-	sprintf(abspath,"%s/%s",pch,binname);
+	snprintf(abspath,sizeof(abspath),"%s/%s",pch,binname);
 
 	if (debug>1)
 	    fprintf(stderr,"Checking for binary '%s'\n", abspath);
@@ -244,7 +271,6 @@ CompSaveHeader(
     FILE *f_stream;
     FILE *f_file;
     char buf[COMP_HDR_SIZE];
-    char *tempfile;
     int len;
     int fd;
 
@@ -334,10 +360,6 @@ CompSaveHeader(
 	exit(-1);
     }
 
-    /* now that it's open, just delete the file */
-    /* it should stay on the disk until closed... */
-    unlink(tempfile);
-    
     return(stdin);
 }
 
@@ -391,7 +413,11 @@ CompOpenPipe(
 	exit(-1);
     }
 
+#ifdef __VMS
+    child_pid = vfork();
+#else
     child_pid = fork();
+#endif
     if (child_pid == -1) {
 	perror("fork");
 	exit(-1);
@@ -441,6 +467,14 @@ CompOpenHeader(
     /* see if it's a supported compression file */
     pf = WhichFormat(filename);
 
+#ifdef __WIN32
+    if(pf != NULL) {
+       fprintf(stderr, "\nError: windows version of tcptrace does not support\nreading compressed dump files. Uncompress the file\nmanually and try again. Sorry!\n");
+       return((FILE *)-1);
+    }
+    return(NULL);
+#endif /* __WIN32 */   
+   
     /* if no compression found, just open the file */
     if (pf == NULL) {
 	if (freopen(filename,"r",stdin) == NULL) {
@@ -490,6 +524,11 @@ CompOpenFile(
     /* if we're just reading from standard input, we'll need some help because */
     /* part of the input is in a file and the rest is still stuck in a pipe */
     if (FileIsStdin(filename)) {
+	 posn=ftell(stdin);
+	 if (posn < 0) {
+	      perror("CompOpenFile : ftell failed");
+	      exit(-1);
+	 }
 	return(PipeHelper());
     }
 
@@ -516,7 +555,11 @@ PipeHelper(void)
     }
     /* remember: fdpipe[0] is for reading, fdpipe[1] is for writing */
 
+#ifdef __VMS
+    child_pid = vfork();
+#else
     child_pid = fork();
+#endif
     if (child_pid == -1) {
 	perror("fork");
 	exit(-1);
@@ -551,12 +594,25 @@ PipeHelper(void)
 
     /* clean up the fd's */
     close(fdpipe[1]);
-    fclose(stdin);
-
+    // Now, we shall purge our old STDIN stream buffer, and point it to the
+    // read end of the pipe, fdpipe[0]
+    
+#ifdef HAVE_FPURGE     
+     fpurge(stdin); // needed for NetBSD/FreeBSD
+#else
+     fflush(stdin);
+#endif
+     clearerr(stdin);
+     
+     if (dup2(fdpipe[0],0)==-1) {
+	  perror("PipeHelper : dup2 failed in parent");
+	  exit(-1);
+     }
+     
     /* make a stream attached to the PIPE and return it */
     f_return = fdopen(fdpipe[0],"r");
     if (f_return == NULL) {
-	perror("fdopen on pipe for reading");
+	perror("PipeHelper : fdopen on pipe for reading");
 	exit(-1);
     }
     return(f_return);
@@ -572,6 +628,27 @@ PipeFitting(
     char buf[4096];		/* just a big buffer */
     int len;
 
+    // Fix the file synchronization problems and undefined behavior exhibited
+    // by fread() in managing its buffers, when stdin is opened by both the
+    // parent and child processes.
+    // In the child process (where we are currently executing), close and 
+    // re-open the temporary file currently opened as stdin, in which the 
+    // first COMP_HDR_SIZE bytes of data were stored. The current file pointer
+    // position in the file was stored in the global variable posn.
+
+    if (fclose(f_header)<0)
+	  perror("PipeFitting : fclose failed");
+     
+    if ((f_header=fopen(tempfile,"r"))==NULL) {
+	 perror("PipeFitting : fopen of tempfile failed");
+	 exit(-1);
+    }
+
+    if (fread(buf,1,posn,f_header)!=posn) {
+	 perror("PipeFitting : fread failed");
+	 exit(-1);
+    }
+     
     /* read from f_header (the file) until empty */
     while (1) {
 	/* read some more data */
@@ -594,6 +671,13 @@ PipeFitting(
 	}
     }
 
+    // We are done with the temporary file. Time to close and unlink it.
+    if (fclose(f_header)<0) 
+	  perror("PipeFitting : fclose failed");
+     
+    if (unlink(tempfile)<0)
+	  perror("PipeFitting : unlink of tempfile failed");
+     
     if (debug>1)
 	fprintf(stderr,
 		"PipeFitting: header file empty, switching to old stdin\n");

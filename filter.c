@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/filter.c,v 5.12 1999/06/22 20:53:23 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/filter.c,v 5.18 2001/08/01 20:47:59 mramadas Exp $";
 
 
 #include <stdio.h>
@@ -569,34 +595,34 @@ PrintConst(
     switch (pf->vartype) {
       case V_ULLONG:
 	if (debug)
-	    sprintf(buf,"ULLONG(%llu)",
+	    snprintf(buf,sizeof(buf),"ULLONG(%" FS_ULL ")",
 		    pf->un.constant.u_longint);
 	else
-	    sprintf(buf,"%llu",pf->un.constant.u_longint);
+	    snprintf(buf,sizeof(buf),"%" FS_ULL,pf->un.constant.u_longint);
 	break;
       case V_LLONG:
 	if (debug)
-	    sprintf(buf,"LLONG(%lld)", pf->un.constant.longint);
+	    snprintf(buf,sizeof(buf),"LLONG(%" FS_LL ")", pf->un.constant.longint);
 	else
-	    sprintf(buf,"%lld", pf->un.constant.longint);
+	    snprintf(buf,sizeof(buf),"%" FS_LL, pf->un.constant.longint);
 	break;
       case V_STRING:
 	if (debug)
-	    sprintf(buf,"STRING(%s)",pf->un.constant.string);
+	    snprintf(buf,sizeof(buf),"STRING(%s)",pf->un.constant.string);
 	else
-	    sprintf(buf,"%s",pf->un.constant.string);
+	    snprintf(buf,sizeof(buf),"%s",pf->un.constant.string);
 	break;
       case V_BOOL:
 	if (debug)
-	    sprintf(buf,"BOOL(%s)",  BOOL2STR(pf->un.constant.bool));
+	    snprintf(buf,sizeof(buf),"BOOL(%s)",  BOOL2STR(pf->un.constant.bool));
 	else
-	    sprintf(buf,"%s", BOOL2STR(pf->un.constant.bool));
+	    snprintf(buf,sizeof(buf),"%s", BOOL2STR(pf->un.constant.bool));
 	break;
       case V_IPADDR:
 	if (debug)
-	    sprintf(buf,"IPADDR(%s)", HostAddr(*pf->un.constant.pipaddr));
+	    snprintf(buf,sizeof(buf),"IPADDR(%s)", HostAddr(*pf->un.constant.pipaddr));
 	else
-	    sprintf(buf,"%s", HostAddr(*pf->un.constant.pipaddr));
+	    snprintf(buf,sizeof(buf),"%s", HostAddr(*pf->un.constant.pipaddr));
 	break;
       default: {
 	    fprintf(stderr,"PrintConst: unknown constant type %d (%s)\n",
@@ -618,14 +644,14 @@ PrintVar(
 
 
     if (debug)
-	sprintf(buf,"VAR(%s,'%s%s',%d,%c)",
+	snprintf(buf,sizeof(buf),"VAR(%s,'%s%s',%lu,%c)",
 		Vartype2Str(pf->vartype),
 		pf->un.variable.fclient?"c_":"s_",
 		pf->un.variable.name,
 		pf->un.variable.offset,
 		pf->conjunction?'c':'d');
     else
-	sprintf(buf,"%s%s",
+	snprintf(buf,sizeof(buf),"%s%s",
 		pf->un.variable.fclient?"c_":"s_",
 		pf->un.variable.name);
 
@@ -677,10 +703,10 @@ Res2Str(
     
     /* for constants */
     switch (pres->vartype) {
-      case V_ULLONG:	sprintf(buf,"ULLONG(%llu)",pres->val.u_longint); break;
-      case V_LLONG:	sprintf(buf,"LLONG(%lld)", pres->val.longint); break;
-      case V_STRING:	sprintf(buf,"STRING(%s)",pres->val.string); break;
-      case V_BOOL:	sprintf(buf,"BOOL(%s)",  BOOL2STR(pres->val.bool)); break;
+      case V_ULLONG:	snprintf(buf,sizeof(buf),"ULLONG(%" FS_ULL ")",pres->val.u_longint); break;
+      case V_LLONG:	snprintf(buf,sizeof(buf),"LLONG(%"  FS_LL  ")",pres->val.longint); break;
+      case V_STRING:	snprintf(buf,sizeof(buf),"STRING(%s)",pres->val.string); break;
+      case V_BOOL:	snprintf(buf,sizeof(buf),"BOOL(%s)",  BOOL2STR(pres->val.bool)); break;
       default: {
 	  fprintf(stderr,"Res2Str: unknown constant type %d (%s)\n",
 		  pres->vartype, Vartype2Str(pres->vartype));
@@ -721,11 +747,11 @@ PrintFilterInternal(
 
     switch(pf->op) {
       case OP_CONSTANT:
-	sprintf(buf,"%s", PrintConst(pf));
+	snprintf(buf,sizeof(buf),"%s", PrintConst(pf));
 	return(strdup(buf));
 
       case OP_VARIABLE:
-	sprintf(buf,"%s", PrintVar(pf));
+	snprintf(buf,sizeof(buf),"%s", PrintVar(pf));
 	return(strdup(buf));
 
       case OP_AND:
@@ -743,19 +769,19 @@ PrintFilterInternal(
       case OP_MOD:
       case OP_BAND:
       case OP_BOR:
-	sprintf(buf,"(%s%s%s)",
+	snprintf(buf,sizeof(buf),"(%s%s%s)",
 		PrintFilterInternal(pf->un.binary.left),
 		Op2Str(pf->op),
 		PrintFilterInternal(pf->un.binary.right));
 	return(strdup(buf));
 
       case OP_NOT:
-	sprintf(buf," NOT(%s)",
+	snprintf(buf,sizeof(buf)," NOT(%s)",
 	       PrintFilterInternal(pf->un.unary.pf));
 	return(strdup(buf));
 
       case OP_SIGNED:
-	sprintf(buf," SIGNED(%s)",
+	snprintf(buf,sizeof(buf)," SIGNED(%s)",
 	       PrintFilterInternal(pf->un.unary.pf));
 	return(strdup(buf));
 
@@ -816,7 +842,7 @@ LookupVar(
 	    else
 		ptr = (void *)pfl->sv_addr;
 	    if ((pfl->vartype == V_FUNC) || (pfl->vartype == V_UFUNC))
-		pf->un.variable.offset = (u_int)ptr;
+		pf->un.variable.offset = (u_long)ptr; /* FIXME? could still be a pointer bug here! */
 	    else
 		pf->un.variable.offset = (char *)ptr - (char *)&ptp_dummy;
 	    pf->un.variable.fclient = fclient;
@@ -900,8 +926,8 @@ Var2String(
 	str = "<NULL>";
 
     if (debug)
-	printf("Var2String returns 0x%08x (%s)\n",
-	       (u_int) str, str);
+	printf("Var2String returns 0x%p (%s)\n",
+	       str, str);
 
     return(str);
 }
@@ -1081,12 +1107,9 @@ EvalMathopUnsigned(
     pres->vartype = V_ULLONG;
     pres->val.u_longint = ret;
 
-    if (debug)
-#ifdef HAVE_LONG_LONG
-	printf("EvalMathopUnsigned %llu %s %llu returns %s\n",
-#else /* HAVE_LONG_LONG */
-	printf("EvalMathopUnsigned %lu %s %lu returns %s\n",
-#endif /* HAVE_LONG_LONG */
+	if (debug)
+		printf("EvalMathopUnsigned %" FS_ULL " %s %" FS_ULL " returns %s\n",
+
 	       varl, Op2Str(pf->op), varr,
 	       Res2Str(pres));
 
@@ -1136,11 +1159,7 @@ EvalMathopSigned(
     pres->val.longint = ret;
 
     if (debug)
-#ifdef HAVE_LONG_LONG
-	printf("EvalMathopSigned %lld %s %lld returns %s\n",
-#else /* HAVE_LONG_LONG */
-	printf("EvalMathopSigned %ld %s %ld returns %s\n",
-#endif /* HAVE_LONG_LONG */
+	printf("EvalMathopSigned %" FS_LL " %s %" FS_LL " returns %s\n",
 	       varl, Op2Str(pf->op), varr,
 	       Res2Str(pres));
 
@@ -1190,11 +1209,7 @@ EvalRelopUnsigned(
     pres->val.bool = ret;
 
     if (debug)
-#ifdef HAVE_LONG_LONG
-	printf("EvalUnsigned %llu %s %llu returns %s\n",
-#else /* HAVE_LONG_LONG */
-	printf("EvalUnsigned %lu %s %lu returns %s\n",
-#endif /* HAVE_LONG_LONG */
+	printf("EvalUnsigned %" FS_ULL " %s %" FS_ULL " returns %s\n",
 	       varl, Op2Str(pf->op), varr,
 	       BOOL2STR(ret));
 
@@ -1242,11 +1257,7 @@ EvalRelopSigned(
     pres->val.bool = ret;
 
     if (debug)
-#ifdef HAVE_LONG_LONG
-	printf("EvalSigned %lld %s %lld returns %s\n",
-#else /* HAVE_LONG_LONG */
-	printf("EvalSigned %ld %s %ld returns %s\n",
-#endif /* HAVE_LONG_LONG */
+	printf("EvalSigned %" FS_LL " %s %" FS_LL " returns %s\n",
 	       varl, Op2Str(pf->op), varr, 
 	       BOOL2STR(ret));
 
@@ -1772,7 +1783,7 @@ VFuncTput(
     tput = (u_llong)(tput_f+0.5);
 
     if (debug)
-	printf("VFuncTput(%s<->%s) = %llu\n",
+	printf("VFuncTput(%s<->%s) = %" FS_ULL "\n",
 	       ptcb->ptp->a_endpoint,
 	       ptcb->ptp->b_endpoint,
 	       tput);
@@ -1791,6 +1802,6 @@ u_llong
 VFuncServTput(
     tcp_pair *ptp)
 {
-    return(VFuncTput(&ptp->a2b));
+    return(VFuncTput(&ptp->b2a));
 }
 

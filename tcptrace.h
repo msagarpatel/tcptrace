@@ -1,38 +1,66 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.h,v 5.18 1999/08/12 17:33:10 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.h,v 5.60 2003/04/03 23:38:48 mramadas Exp $";
 
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <net/if.h>
@@ -60,14 +88,33 @@ static char const rcsid_tcptrace[] =
 /* IPv6 support */
 #include "ipv6.h"
 
+/* dynamic string support */
+#include "dstring.h"
+
+/* memory allocation routines */
+#include "pool.h"
+
 /* we want LONG LONG in some places */
 #if SIZEOF_UNSIGNED_LONG_LONG_INT >= 8
 #define HAVE_LONG_LONG
 typedef unsigned long long int u_llong;
 typedef long long int llong;
+/* Thanks to MacOSX, they use %qu to print unsigned long long ints */
+/* There is a test to see if we need to use %qu or %llu to print these variables */
+/* The test is located in configure.in */
+#ifdef USE_LLU
+#define FS_ULL "llu" /* For most systems use llu */
+#define FS_LL  "lld" /* For most systems use ll */
+#else /* USE_LLU */
+#define FS_ULL "qu"  /* MacOSX use qu */
+#define FS_LL  "qd"  /* MacOSX use qd */
+#endif /* USE_LLU */
+
 #else /* LONG LONG */
 typedef unsigned long int u_llong;
 typedef long int llong;
+#define FS_ULL "lu" /* No long long unsigned, so  use lu */
+#define FS_LL  "ld" /* No long long ints, so use ld */
 #endif /* LONG LONG */
 
 /* plotter information */
@@ -78,9 +125,54 @@ extern char *ColorNames[NCOLORS];
 /* {"green", "red", "blue", "yellow", "purple", "orange", "magenta", "pink"}; */
 typedef struct pl_line *PLINE;
 
+/* max number of letters in endpoint name */
+/* (8 allows 26**8 different endpoints (209,000,000,000)
+    probably plenty for now!!!!!) */
+#define MAX_HOSTLETTER_LEN 8 
+
+
+
+/* several places in the code NEED numbers of a specific size. */
+/* since the definitions aren't standard across everything we're */
+/* trying to support, the types are gathered up here */
+/* specifically, we need:
+   tt_uint32	unsigned 32 bit 
+   tt_uint16	unsigned 16 bit 
+   tt_int32	signed 32 bit 
+   tt_int16	signed 16 bit
+*/
+/* first, do the 32 bit ones */
+#if SIZEOF_UNSIGNED_LONG_INT == 4
+typedef unsigned long tt_uint32;
+typedef          long tt_int32;
+#else
+#if SIZEOF_UNSIGNED_INT == 4
+typedef unsigned int tt_uint32;
+typedef          int tt_int32;
+#else
+OOPS: Please insert an appropriate 32-bit unsigned type here!
+OOPS: Please insert an appropriate 32-bit signed type here!
+#endif /* SIZEOF_UNSIGNED_INT == 4 */
+#endif /* SIZEOF_UNSIGNED_LONG_INT == 4 */
+/* first, do the 16 bit ones */
+#if SIZEOF_UNSIGNED_INT == 2
+typedef unsigned int tt_uint16;
+typedef          int tt_int16;
+#else
+#if SIZEOF_UNSIGNED_SHORT == 2
+typedef unsigned short tt_uint16;
+typedef          short tt_int16;
+#else
+OOPS: Please insert an appropriate 16-bit unsigned type here!
+OOPS: Please insert an appropriate 16-bit signed type here!
+#endif /* SIZEOF_UNSIGNED_INT == 4 */
+#endif /* SIZEOF_UNSIGNED_LONG_INT == 4 */
+
+
 
 /* type for a TCP sequence number, ACK, FIN, or SYN */
-typedef u_long seqnum;
+/* This type MUST be a 32-bit unsigned number */
+typedef tt_uint32 seqnum;
 
 /* length of a segment */
 typedef u_long seglen;
@@ -101,6 +193,28 @@ typedef struct ipaddr {
     } un;
 } ipaddr;
 
+#ifndef __VMS
+
+/* some machines (TRUE64 for one) handle the 4-bit TCP/IP fields
+   differently, so this macro simplifies life */
+#define IP_HL(pip)   ((pip)->ip_hl)
+#define IP_V(pip)    ((pip)->ip_v)
+#define TH_X2(ptcp)  ((ptcp)->th_x2)
+#define TH_OFF(ptcp) ((ptcp)->th_off)
+/* some systems (darwin at least) use this for something else */
+
+#else
+
+/* One alternative looks like this: */
+#define IP_HL(pip)   ((pip)->ip_vhl&0xf)
+#define IP_V(pip)    ((pip)->ip_vhl>>4)
+#define TH_X2(ptcp)  ((ptcp)->th_xoff&0xf)
+#define TH_OFF(ptcp) ((ptcp)->th_xoff>>4)
+
+#endif
+
+#undef TH_FLAGS
+#define TH_FLAGS(ptcp) ((ptcp)->th_flags)
 
 /* type for a timestamp */
 typedef struct timeval timeval;
@@ -186,6 +300,11 @@ typedef struct tcb {
     Bool	fsack_req;	/* did he request SACKs? */
     u_char	window_scale;
 
+	/* If we are using window scaling, have we adjusted the 
+	   win_min field from the non-scaled window size
+	   that appeared in the SYN packet?? */
+	Bool window_stats_updated_for_scaling;
+
     /* statistics added */
     u_llong	data_bytes;
     u_llong	data_pkts;
@@ -198,9 +317,8 @@ typedef struct tcb {
     u_long	win_max;
     u_long	win_min;
     u_long	win_tot;
+    u_long      win_last;  /* last advertised window size*/
     u_long	win_zero_ct;
-    u_long	min_seq;
-    u_long	max_seq;
     u_llong	packets;
     u_char	syn_count;
     u_char	fin_count;
@@ -211,6 +329,29 @@ typedef struct tcb {
     u_llong	sacks_sent;	/* sacks returned */
     u_long	ipv6_segments;	/* how many segments were ipv6? */
 
+
+    /* stats on urgent data */
+    u_long     urg_data_bytes;
+    u_long     urg_data_pkts;
+   
+   /* stats on sequence numbers */
+
+								
+   /* Statistics to store the number of Zero window probes
+      seen and the total number of bytes spent for it. */
+    u_long      num_zwnd_probes;  
+    u_long      zwnd_probe_bytes;
+
+    /* stats on sequence numbers */
+
+    seqnum	min_seq;	/* smallest seq number seen */
+    seqnum	max_seq;	/* largest seq number seen */
+    seqnum	latest_seq;	/* most recent seq number seen */
+
+    /* stats on sequence space wrap arounds */
+    u_int quad1, quad2, quad3, quad4;  /* was every quadrant visited */
+    u_int seq_wrap_count;              /* wrap count */
+    
     /* hardware duplicate detection */
 #define SEGS_TO_REMEMBER 8
     struct str_hardware_dups {
@@ -233,9 +374,13 @@ typedef struct tcb {
     Bool	data_acked;	/* has any non-SYN data been acked? */
 
     /* added for (estimated) congestions window stats (for Mallman) */
-    u_long	cwin_max;
-    u_long	cwin_min;
-    u_llong	cwin_tot;
+    u_long	owin_max;
+    u_long	owin_min;
+    u_llong	owin_tot;
+    u_llong	owin_wavg;  /* weighted owin */
+    u_llong     owin_count;
+    u_long	previous_owin_sample;
+    timeval     previous_owin_sample_time;
 
     /* RTT stats for singly-transmitted segments */
     double	rtt_last;	/* RTT as of last good ACK (microseconds) */
@@ -250,6 +395,23 @@ typedef struct tcb {
     double	rtt_sum_last;	/* from last transmission, for averages */
     double	rtt_sum2_last;	/* sum of squares, for stdev */
     u_long	rtt_count_last;	/* from last transmission, for averages */
+
+	/* To keep track of stats for FULL SIZE segments
+	   Simple heuristic :
+	   We shall treat the largest packet, so far seen as the
+	   "full size" packet and collect stats. accordingly.
+	   Upon seeing a bigger packet, we flush all stats. collected
+	   incorrectly and begin all over again */
+	u_long rtt_full_size; 
+
+	u_long rtt_full_min;
+	u_long rtt_full_max;
+	double rtt_full_sum;	/* for averages */
+	double rtt_full_sum2;	/* sum of squares for stdev */
+	u_long rtt_full_count;	/* for averages */ 
+
+	u_long rtt_3WHS;		/* rtt value used to seed RTO timers */
+
     /* ACK Counters */
     u_llong	rtt_amback;	/* ambiguous ACK */
     u_llong	rtt_cumack;	/* segments only cumulativly ACKed */
@@ -285,6 +447,9 @@ typedef struct tcb {
     PLOTTER	tsg_plotter;
     char	*tsg_plotfile;
 
+    /* Time Line Graph */
+    PLOTTER     tline_plotter;
+   
     /* Dumped RTT samples */
     MFILE	*rtt_dump_file;
 
@@ -305,13 +470,18 @@ typedef struct tcb {
     PLINE	segsize_avg_line;
 
     /* Congestion window graph */
-    PLOTTER	cwin_plotter;
-    PLINE	cwin_line;
-    PLINE	cwin_avg_line;
+    PLOTTER	owin_plotter;
+    PLINE	owin_line;
+    PLINE	owin_avg_line;
+    PLINE 	owin_wavg_line;
 
     /* for tracking unidirectional idle time */
     timeval	last_time;	/* last packet SENT from this side */
     u_llong	idle_max;	/* maximum idle time observed (usecs) */
+
+    /* for looking for interesting SACK blocks */
+    u_long	num_sacks;
+    u_long	max_sack_blocks;
 
     /* host name letter(s) */
     char	*host_letter;
@@ -354,6 +524,7 @@ struct stcp_pair {
     tcb			a2b;
     tcb			b2a;
 
+
     /* module-specific structures, if requested */
     void		**pmod_info;
 
@@ -368,6 +539,35 @@ typedef struct tcphdr tcphdr;
 extern int num_tcp_pairs;	/* how many pairs are in use */
 extern tcp_pair **ttp;		/* array of pointers to allocated pairs */
 
+/* Tue Nov 17, 1998 */
+/* prior to version 5.13, we kept a hash table of all of the connections. */
+/* The most recently-accessed connections move to the front of the bucket */
+/* linked list.  Unfortunately, when reading thousands of connections on */
+/* a machine with limited physical memory, this worked poorly.  Every time */
+/* a new connection opened, we had to search the entire bucket, which */
+/* pulled all of the paged-out connections back into memory.  The new */
+/* system keeps a quick snapshot of the connection (ptp_snap) in the */
+/* hash table.  We only retrieve the connection record if the snapshot */
+/* matches. The result is that it works MUCH better when memory is low. */
+typedef struct ptp_snap {
+    tcp_pair_addrblock	addr_pair; /* just a copy */
+    struct ptp_snap	*next;
+    void		*ptp;
+} ptp_snap;
+
+typedef struct ptp_ptr {
+  struct ptp_ptr	*next;
+  struct ptp_ptr	*prev;
+  struct ptp_snap	*from;
+  tcp_pair		*ptp;
+} ptp_ptr;
+
+#define NONREAL_LIVE_CONN_INTERVAL      4*60    /* 4 minutes */
+#define REMOVE_LIVE_CONN_INTERVAL	8*3600	/* 8 hours */
+#define REMOVE_CLOSED_CONN_INTERVAL	8*60	/* 8 minutes */
+#define UPDATE_INTERVAL			30	/* 30 seconds */
+#define MAX_CONN_NUM			50000	/* max number of connections */
+						/* for continuous mode */
 
 /* minimal support for UDP "connections" */
 typedef struct ucb {
@@ -389,6 +589,9 @@ typedef struct ucb {
 
 typedef tcp_pair_addrblock udp_pair_addrblock;
 struct sudp_pair {
+    /* Are we ignoring this 'connection' ? */
+    Bool                ignore_pair;
+     
     /* endpoint identification */
     udp_pair_addrblock	addr_pair;
 
@@ -431,7 +634,8 @@ extern Bool graph_rtt;
 extern Bool graph_tput;
 extern Bool graph_tsg;
 extern Bool graph_segsize;
-extern Bool graph_cwin;
+extern Bool graph_owin;
+extern Bool graph_tline;
 extern Bool hex;
 extern Bool ignore_non_comp;
 extern Bool resolve_ipaddresses;
@@ -439,7 +643,7 @@ extern Bool resolve_ports;
 extern Bool triple_dupack_allows_data;
 extern Bool verify_checksums;
 extern Bool print_rtt;
-extern Bool print_cwin;
+extern Bool print_owin;
 extern Bool printbrief;
 extern Bool printsuppress;
 extern Bool printem;
@@ -454,21 +658,51 @@ extern Bool warn_printbad_syn_fin_seq;
 extern Bool show_out_order;
 extern Bool show_rexmit;
 extern Bool show_zero_window;
+extern Bool show_urg;
 extern Bool show_sacks;
 extern Bool show_rtt_dongles;
 extern Bool show_triple_dupack;
+extern Bool show_zwnd_probes;
 extern Bool use_short_names;
 extern Bool save_tcp_data;
 extern Bool graph_time_zero;
 extern Bool graph_seq_zero;
+extern Bool print_seq_zero;
 extern Bool graph_zero_len_pkts;
 extern Bool plot_tput_instant;
 extern Bool filter_output;
 extern Bool do_udp;
 extern Bool show_title;
+extern Bool docheck_hw_dups;
+/* constants for real-time (continuous) mode */
+extern Bool run_continuously;
+extern Bool conn_num_threshold;
+extern Bool xplot_all_files;
+extern Bool ns_hdrs;
+extern Bool csv;
+extern Bool tsv;
+extern u_long remove_live_conn_interval;
+extern u_long nonreal_live_conn_interval;
+extern u_long remove_closed_conn_interval;
+extern u_long update_interval;
+extern u_long max_conn_num;
+
 extern int debug;
 extern int thru_interval;
 extern u_long pnum;
+
+/* extended variables with values */
+extern char *output_file_dir;
+extern char *output_file_prefix;
+extern char *xplot_title_prefix;
+extern char *xplot_args;
+extern char *sv;
+extern char *sp;       /* Separator used for long output with <SP>-separated-values */
+
+/* Used to comment out header lines of the long output
+ * when <SP>-separated-values is requested
+ */
+extern char *comment;
 
 extern u_long ctrunc;
 extern timeval current_time;
@@ -485,10 +719,13 @@ extern timeval last_packet;
 
 /* external routine decls */
 double sqrt(double x);
-char *ether_ntoa(struct ether_addr *e);
 void free(void *);
 int finite(double);
 
+/* note that many machines have an ether_ntoa, but the output differs, as does
+   the prototype, so we'll include our own and change the name to avoid conflicts
+   with local prototypes if they exist and differ */
+char *Ether_Ntoa(struct ether_addr *e);
 
 /* global routine decls */
 void *MallocZ(int);
@@ -496,7 +733,7 @@ void *ReallocZ(void *oldptr, int obytes, int nbytes);
 void trace_init(void);
 void trace_done(void);
 void seglist_init(tcb *);
-void printpacket(int, int, void *, int, struct ip *, void *plast);
+void printpacket(int, int, void *, int, struct ip *, void *plast, tcb *tcb);
 void plotter_vtick(PLOTTER, timeval, u_long);
 void plotter_utick(PLOTTER, timeval, u_long);
 void plotter_uarrow(PLOTTER, timeval, u_long);
@@ -519,17 +756,22 @@ void plotter_diamond(PLOTTER, timeval, u_long);
 void plotter_darrow(PLOTTER, timeval, u_long);
 void plotter_box(PLOTTER, timeval, u_long);
 void plotter_arrow(PLOTTER, timeval, u_long, char);
-void plotter_nothing(PLOTTER pl, struct timeval t);
+void plotter_nothing(PLOTTER, timeval);
+void plotter_invisible(PLOTTER, timeval, u_long);
+void plotter_switch_axis(PLOTTER, Bool);
 void plot_init(void);
 tcp_pair *dotrace(struct ip *, struct tcphdr *ptcp, void *plast);
 void PrintRawData(char *label, void *pfirst, void *plast, Bool octal);
 void PrintRawDataHex(char *label, void *pfirst, void *plast);
 void PrintTrace(tcp_pair *);
 void UDPPrintTrace(udp_pair *);
+void PrintSVHeader(void);
 void PrintBrief(tcp_pair *);
 void UDPPrintBrief(udp_pair *);
 void OnlyConn(int);
 void IgnoreConn(int);
+void OnlyUDPConn(int);
+void IgnoreUDPConn(int);
 double elapsed(timeval, timeval);
 void tv_sub(struct timeval *plhs, struct timeval rhs);
 void tv_add(struct timeval *plhs, struct timeval rhs);
@@ -545,7 +787,7 @@ char *ts2ascii_date(timeval *);
 char *ServiceName(portnum);
 char *HostName(ipaddr);
 char *HostAddr(ipaddr);
-char *HostLetter(u_int);
+char *HostLetter(llong);
 char *NextHostLetter(void);
 char *EndpointName(ipaddr,portnum);
 PLOTTER new_plotter(tcb *plast, char *filename, char *title,
@@ -557,7 +799,7 @@ struct mfile *Mfopen(char *fname, char *mode);
 void Minit(void);
 int Mfileno(MFILE *pmf);
 int Mvfprintf(MFILE *pmf, char *format, va_list ap);
-int Mfwrite(char *buf, u_long size, u_long nitems, MFILE *pmf);
+int Mfwrite(void *buf, u_long size, u_long nitems, MFILE *pmf);
 long Mftell(MFILE *pmf);
 int Mfseek(MFILE *pmf, long offset, int ptrname);
 int Mfprintf(MFILE *pmf, char *format, ...);
@@ -584,6 +826,24 @@ Bool tcp_cksum_valid(struct ip *pip, struct tcphdr *ptcp, void *plast);
 Bool udp_cksum_valid(struct ip *pip, struct udphdr *pudp, void *plast);
 ipaddr *str2ipaddr(char *str);
 int IPcmp(ipaddr *pipA, ipaddr *pipB);
+void ModulesPerOldConn(tcp_pair *ptp);
+
+/* Memory allocation routines with page boundaries */ 
+tcp_pair *MakeTcpPair(void);
+void FreeTcpPair(tcp_pair *ptr);
+udp_pair *MakeUdpPair(void);
+void FreeUdpPair(udp_pair *ptr);
+seqspace *MakeSeqspace(void);
+void FreeSeqspace(seqspace *ptr);
+ptp_snap *MakePtpSnap(void);
+void FreePtpSnap(ptp_snap *ptr);
+segment *MakeSegment(void);
+void FreeSegment(segment *ptr);
+quadrant *MakeQuadrant(void);
+void FreeQuadrant(quadrant *ptr);
+ptp_ptr *MakePtpPtr(void);
+void FreePtpPtr(ptp_ptr *ptr);
+void freequad(quadrant **);
 
 /* high-level line drawing */
 PLINE new_line(PLOTTER pl, char *label, char *color);
@@ -599,6 +859,10 @@ void HelpFilter(void);
 void ParseFilter(char *expr);
 Bool PassesFilter(tcp_pair *ptp);
 
+/* simple string expansion for file names, directories, etc */
+char *ExpandFormat(const char *format);
+
+
 /* TCP flags macros */
 #define SYN_SET(ptcp)((ptcp)->th_flags & TH_SYN)
 #define FIN_SET(ptcp)((ptcp)->th_flags & TH_FIN)
@@ -608,9 +872,16 @@ Bool PassesFilter(tcp_pair *ptp);
 #define URGENT_SET(ptcp)((ptcp)->th_flags & TH_URG)
 #define FLAG6_SET(ptcp)((ptcp)->th_flags & 0x40)
 #define FLAG7_SET(ptcp)((ptcp)->th_flags & 0x80)
-#define CWR_SET(ptcp)((ptcp)->th_x2 & TH_CWR)
-#define ECN_ECHO_SET(ptcp)((ptcp)->th_x2 & TH_ECN_ECHO)
 
+/* Changed the following macros to reflect the correct position
+of bits as specified in RFC 2481 and draft-ietf-tsvwg-ecn-04.txt */
+/*
+	#define CWR_SET(ptcp)     (TH_X2((ptcp)) & TH_CWR)
+	#define ECN_ECHO_SET(ptcp)(TH_X2((ptcp)) & TH_ECN_ECHO)
+*/
+
+#define CWR_SET(ptcp)	(TH_FLAGS((ptcp)) & TH_CWR)
+#define ECN_ECHO_SET(ptcp)	(TH_FLAGS((ptcp)) & TH_ECN_ECHO)
 
 /* connection directions */
 #define A2B 1
@@ -625,7 +896,7 @@ Bool PassesFilter(tcp_pair *ptp);
 #define IN_Q3(seq)	(QUADNUM(seq)==3)
 #define IN_Q4(seq)	(QUADNUM(seq)==4)
 #define FIRST_SEQ(quadnum)	(QUADSIZE*(quadnum-1))
-#define LAST_SEQ(quadnum)	((QUADSIZE-1)*quadnum)
+#define LAST_SEQ(quadnum)	((QUADSIZE*quadnum)-1) /* bug fix by Priya */
 #define BOUNDARY(beg,fin) (QUADNUM((beg)) != QUADNUM((fin)))
 
 
@@ -680,9 +951,18 @@ typedef struct opt_unknown {
 #define IPTOS_ECT	0x02	/* ECN-Capable Transport */
 #define IPTOS_CE	0x01	/* Experienced Congestion */
 
-#define TH_ECN_ECHO	0x02	/* Used by receiver to echo CE bit */
-#define TH_CWR		0x01	/* Congestion Window Reduced */
+// Modified the following macros to reflect the
+// correct bit positions for CWR and ECE as specified in 
+// RFC 2481 and the latest draft: draft-ietf-tsvwg-ecn-04.txt.
+// The bits CWR and ECE are actually the most significant
+// bits in the TCP flags octet respectively.
 
+/*#define TH_ECN_ECHO	0x02 */	/* Used by receiver to echo CE bit */
+/*#define TH_CWR		0x01 */	/* Congestion Window Reduced */
+
+#define TH_CWR 0x80			/* Used by sender to indicate congestion
+							   window size reduction. */
+#define TH_ECN_ECHO 0x40	/* Used by receiver to echo CE bit. */
 
 
 /* some compilers seem to want to make "char" unsigned by default, */
@@ -727,7 +1007,8 @@ struct tcp_options {
 #define RTT_GRAPH_FILE_EXTENSION	"_rtt.xpl"
 #define PLOT_FILE_EXTENSION		"_tsg.xpl"
 #define SEGSIZE_FILE_EXTENSION		"_ssize.xpl"
-#define CWIN_FILE_EXTENSION		"_cwin.xpl"
+#define OWIN_FILE_EXTENSION		"_owin.xpl"
+#define TLINE_FILE_EXTENSION		"_tline.xpl"
 #define THROUGHPUT_FILE_EXTENSION	"_tput.xpl"
 #define CONTENTS_FILE_EXTENSION		"_contents.dat"
 
@@ -747,30 +1028,38 @@ typedef int pread_f(struct timeval *, int *, int *, void **,
 
 /* give the prototypes for the is_GLORP() routines supported */
 #ifdef GROK_SNOOP
-	pread_f *is_snoop(void);
+	pread_f *is_snoop(char *);
 #endif /* GROK_SNOOP */
 #ifdef GROK_NETM
-	pread_f *is_netm(void);
+	pread_f *is_netm(char *);
 #endif /* GROK_NETM */
 #ifdef GROK_TCPDUMP
-	pread_f *is_tcpdump(void);
+	pread_f *is_tcpdump(char *);
 #endif /* GROK_TCPDUMP */
 #ifdef GROK_ETHERPEEK
-	pread_f *is_EP(void);
+	pread_f *is_EP(char *);
 #endif /* GROK_ETHERPEEK */
 #ifdef GROK_NS
- 	pread_f *is_ns(void);
+ 	pread_f *is_ns(char *);
 #endif /* GROK_NS */
 #ifdef GROK_NLANR
-	pread_f *is_nlanr(void);
+	pread_f *is_nlanr(char *);
 #endif /* GROK_NLANR */
+#ifdef GROK_NETSCOUT
+	pread_f *is_netscout(char *);
+#endif /* GROK_NETSCOUT */
 
-
+#ifndef __VMS
 /* I've had problems with the memcpy function that gcc stuffs into the program
    and alignment problems.  This should fix it! */
 void *MemCpy(void *p1, void *p2, size_t n); /* in tcptrace.c */
-#define memcpy(p1,p2,n) MemCpy(p1,p2,n);
+#define memcpy(p1,p2,n) MemCpy(p1,p2,n)
+#endif /* __VMS */
 
+#ifdef __VMS
+#define snprintf snprintf_vms
+int snprintf_vms(char *str, size_t len, const char *fmt, ...);
+#endif
 
 /*
  * timeval compare macros
@@ -789,7 +1078,7 @@ void *MemCpy(void *p1, void *p2, size_t n); /* in tcptrace.c */
 /*
  * Macros to simplify access to IPv4/IPv6 header fields
  */
-#define PIP_VERS(pip) (((struct ip *)(pip))->ip_v)
+#define PIP_VERS(pip) (IP_V((struct ip *)(pip)))
 #define PIP_ISV6(pip) (PIP_VERS(pip) == 6)
 #define PIP_ISV4(pip) (PIP_VERS(pip) == 4)
 #define PIP_V6(pip) ((struct ipv6 *)(pip))
@@ -820,6 +1109,14 @@ struct ipaddr *IPV6ADDR2ADDR(struct in6_addr *addr6);
 #define IP_MAXPACKET 65535
 #endif /* IP_MAXPACKET */
 
+/* max 32 bit number */
+#define MAX_32 (0x100000000)
+
 #ifndef ETHERTYPE_REVARP
 #define ETHERTYPE_REVARP        0x8035
 #endif /* ETHERTYPE_REVARP */
+
+#ifndef ETHERTYPE_VLAN
+#define ETHERTYPE_VLAN		0x8100
+#endif	/* 802.1Q Virtual LAN */
+

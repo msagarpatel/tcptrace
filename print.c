@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/print.c,v 5.10 1999/09/07 22:40:15 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/print.c,v 5.25 2002/11/11 23:35:40 alakhian Exp $";
 
 
 /* 
@@ -41,7 +67,7 @@ static char const rcsid[] =
 /* local routines */
 static void printeth_packet(struct ether_header *);
 static void printip_packet(struct ip *, void *plast);
-static void printtcp_packet(struct ip *, void *plast);
+static void printtcp_packet(struct ip *, void *plast, tcb *tcb);
 static void printudp_packet(struct ip *, void *plast);
 static char *ParenServiceName(portnum);
 static char *ParenHostName(struct ipaddr addr);
@@ -49,17 +75,18 @@ static void printipv4(struct ip *pip, void *plast);
 static void printipv6(struct ipv6 *pipv6, void *plast);
 static char *ipv6addr2str(struct in6_addr addr);
 static void printipv4_opt_addrs(char *popt, int ptr, int len);
+static char *PrintSeqRep(tcb *ptcb, u_long seq);
 
 
 
-/* Unix format: "Fri Sep 13 00:00:00 1986\n" */
-/*			   1         2          */
-/*		 012345678901234567890123456789 */
+/* Resulting string format: "Fri Sep 13 00:00:00.123456 1986" */
+/*			               1         2         3   */
+/*		             0123456789012345678901234567890 */
 char *
 ts2ascii(
     struct timeval	*ptime)
 {
-	static char buf[30];
+	static char buf[32];
 	struct tm *ptm;
 	char *now;
 	int decimal;
@@ -67,7 +94,7 @@ ts2ascii(
 	if (ZERO_TIME(ptime))
 	    return("        <the epoch>       ");
 
-	ptm = localtime(&ptime->tv_sec);
+	ptm = localtime((time_t *)&ptime->tv_sec);
 	now = asctime(ptm);
 
 	/* splice in the microseconds */
@@ -76,12 +103,12 @@ ts2ascii(
 	decimal = ptime->tv_usec;  /* for 6 digits */
 
 	now[24] = '\00';	/* nuke the newline */
-	sprintf(buf, "%s.%06d %s", now, decimal, &now[20]);
+	snprintf(buf,sizeof(buf), "%s.%06d %s", now, decimal, &now[20]);
 
 	return(buf);
 }
 
-/* same as ts2ascii, but leave the year on */
+/* same as ts2ascii, but no year */
 char *
 ts2ascii_date(
     struct timeval	*ptime)
@@ -94,13 +121,13 @@ ts2ascii_date(
 	if (ZERO_TIME(ptime))
 	    return("        <the epoch>       ");
 
-	ptm = localtime(&ptime->tv_sec);
+	ptm = localtime((time_t *)&ptime->tv_sec);
 	now = asctime(ptm);
 	now[24] = '\00';
 
 /* 	decimal = (ptime->tv_usec + 50) / 100;*/  /* for 4 digits */
 	decimal = ptime->tv_usec;  /* for 6 digits */
-	sprintf(buf, "%s.%06d", now, decimal);
+	snprintf(buf,sizeof(buf), "%s.%06d", now, decimal);
 
 	return(buf);
 }
@@ -110,8 +137,8 @@ static void
 printeth_packet(
     struct ether_header *pep)
 {
-    printf("\tETH Srce: %s\n", ether_ntoa((struct ether_addr *)&pep->ether_shost));
-    printf("\tETH Dest: %s\n", ether_ntoa((struct ether_addr *)&pep->ether_dhost));
+    printf("\tETH Srce: %s\n", Ether_Ntoa((struct ether_addr *)&pep->ether_shost));
+    printf("\tETH Dest: %s\n", Ether_Ntoa((struct ether_addr *)&pep->ether_dhost));
 
     printf(
 	hex?"\t    Type: 0x%x %s\n":"\t    Type: %d %s\n",
@@ -131,7 +158,7 @@ printip_packet(
 {
     /* print an ipv6 header */
     if (PIP_ISV6(pip)) {
-	if ((unsigned)pip+sizeof(struct ipv6)-1 > (unsigned)plast) {
+	if ((char *)pip+sizeof(struct ipv6)-1 > (char *)plast) {
 	    if (warn_printtrunc)
 		printf("\t[packet truncated too short for IP details]\n");
 	    ++ctrunc;
@@ -143,7 +170,7 @@ printip_packet(
 
     if (PIP_ISV4(pip)) {
 	/* make sure we have enough of the packet */
-	if ((unsigned)pip+sizeof(struct ip)-1 > (unsigned)plast) {
+	if ((char *)pip+sizeof(struct ip)-1 > (char *)plast) {
 	    if (warn_printtrunc)
 		printf("\t[packet truncated too short for IP details]\n");
 	    ++ctrunc;
@@ -154,7 +181,7 @@ printip_packet(
     }
 
     /* unknown type */
-    printf("Unknown IP version %d\n", pip->ip_v);
+    printf("Unknown IP version %d\n", PIP_VERS(pip));
 }
 
 
@@ -168,14 +195,14 @@ printipv4(
     Bool mf;
     
     /* make sure we have enough of the packet */
-    if ((unsigned)pip+sizeof(struct ip)-1 > (unsigned)plast) {
+    if ((char *)pip+sizeof(struct ip)-1 > (char *)plast) {
 	if (warn_printtrunc)
 	    printf("\t[packet truncated too short for IP details]\n");
 	++ctrunc;
 	return;
     }
 
-    printf("\tIP  VERS: %d\n", pip->ip_v);
+    printf("\tIP  VERS: %d\n", IP_V(pip));
     printf("\tIP  Srce: %s %s\n",
 	   inet_ntoa(pip->ip_src),
 	   ParenHostName(*IPV4ADDR2ADDR(&pip->ip_src)));
@@ -193,7 +220,7 @@ printipv4(
 	(pip->ip_p == IPPROTO_EGP)?"(EGP)":
 	"");
 
-    printf("\t    HLEN: %d\n", pip->ip_hl*4);
+    printf("\t    HLEN: %d\n", IP_HL(pip)*4);
     printf("\t     TTL: %d\n", pip->ip_ttl);
     printf("\t     LEN: %d\n", ntohs(pip->ip_len));
     printf("\t      ID: %d\n", ntohs(pip->ip_id));
@@ -210,7 +237,7 @@ printipv4(
     } else {
 	printf("\t  OFFSET: 0x%04x (frag: %d bytes at offset %u - %s)",
 	       ntohs(pip->ip_off),
-	       ntohs(pip->ip_len)-pip->ip_hl*4,
+	       ntohs(pip->ip_len)-IP_HL(pip)*4,
 	       offset,
 	       mf?"More Frags":"Last Frag");
     }
@@ -218,17 +245,17 @@ printipv4(
 	printf("  Don't Fragment\n");	/* don't fragment */
 
     /* print IP options if there are any */
-    if (pip->ip_hl != 5) {
+    if (IP_HL(pip) != 5) {
 	char *popt = (char *)pip + 20;
 	void *plast_option;
 
 	/* find the last option in the file */
-	plast_option = (char *)pip+4*pip->ip_hl-1;
+	plast_option = (char *)pip+4*IP_HL(pip)-1;
 	if (plast_option > plast)
 	    plast_option = plast; /* truncated shorter than that */
 
-	printf("\t Options: %d bytes\n", 4*pip->ip_hl-20);
-	while ((void *)popt <= plast_option) {
+	printf("\t Options: %d bytes\n", 4*IP_HL(pip)-20);
+	while ((char *)popt <= (char *)plast_option) {
 	    u_int opt = *popt;
 	    u_int len = *(popt+1);
 	    u_int ptr = *(popt+2);
@@ -239,7 +266,7 @@ printipv4(
 	    /* check for truncated option */
 	    if ((void *)(popt+len-1) > plast) {
 		printf("\t    IP option (truncated)\n");
-		continue;
+		break;
 	    }
 
 	    printf("\t    IP option %d (copy:%c  class:%s  number:%d)\n",
@@ -320,7 +347,8 @@ printipv4_opt_addrs(
 static void
 printtcp_packet(
     struct ip *pip,
-    void *plast)
+    void *plast,
+    tcb *thisdir)
 {
     unsigned tcp_length;
     unsigned tcp_data_length;
@@ -328,14 +356,14 @@ printtcp_packet(
     int i;
     u_char *pdata;
     struct ipv6 *pipv6;
+    tcb *otherdir = NULL;
 
     /* find the tcp header */
-    ptcp = gettcp(pip, &plast);
-    if (ptcp == NULL)
-	return;			/* not TCP */
+    if (gettcp(pip, &ptcp, &plast))
+      return;		/* not TCP or bad TCP packet */
 
     /* make sure we have enough of the packet */
-    if ((unsigned)ptcp+sizeof(struct tcphdr)-1 > (unsigned)plast) {
+    if ((char *)ptcp+sizeof(struct tcphdr)-1 > (char *)plast) {
 	if (warn_printtrunc)
 	    printf("\t[packet truncated too short for TCP details]\n");
 	++ctrunc;
@@ -347,9 +375,13 @@ printtcp_packet(
 	pipv6 = (struct ipv6 *) pip;
 	tcp_length = ntohs(pipv6->ip6_lngth);
     } else {
-	tcp_length = ntohs(pip->ip_len) - (4 * pip->ip_hl);
+	tcp_length = ntohs(pip->ip_len) - (4 * IP_HL(pip));
     }
-    tcp_data_length = tcp_length - (4 * ptcp->th_off);
+    tcp_data_length = tcp_length - (4 * TH_OFF(ptcp));
+
+    /* find the tcb's (if available) */
+    if (thisdir)
+	otherdir = thisdir->ptwin;
 
     printf("\tTCP SPRT: %u %s\n",
 	   ntohs(ptcp->th_sport),
@@ -367,29 +399,25 @@ printtcp_packet(
 	   SYN_SET(ptcp)?   'S':'-',
 	   FIN_SET(ptcp)?   'F':'-',
 	   ptcp->th_flags);
-    printf(
-	hex?"\t     SEQ: 0x%08x\n":"\t     SEQ: %d\n",
-	ntohl(ptcp->th_seq));
-    printf(
-	hex?"\t     ACK: 0x%08x\n":"\t     ACK: %d\n",
-	ntohl(ptcp->th_ack));
+    printf("\t     SEQ: %s\n", PrintSeqRep(thisdir,  ntohl(ptcp->th_seq)));
+    printf("\t     ACK: %s\n", PrintSeqRep(otherdir, ntohl(ptcp->th_ack)));
     printf("\t     WIN: %u\n", ntohs(ptcp->th_win));
-    printf("\t    HLEN: %u", ptcp->th_off*4);
-    if ((u_long)ptcp + ptcp->th_off*4 - 1 > (u_long)plast) {
+    printf("\t    HLEN: %u", TH_OFF(ptcp)*4);
+    if ((char *)ptcp + TH_OFF(ptcp)*4 - 1 > (char *)plast) {
 	/* not all there */
-	printf(" (only %ld bytes in dump file)",
-	       (u_long)plast - (u_long)ptcp + 1);
+	printf(" (only %lu bytes in dump file)",
+	       (u_long)((char *)plast - (char *)ptcp + 1));
     }
     printf("\n");
     
-    if (ptcp->th_x2 != 0) {
+    if (TH_X2(ptcp) != 0) {
 	printf("\t    MBZ: 0x%01x (these are supposed to be zero!)\n",
-	       ptcp->th_x2);
+	       TH_X2(ptcp));
     }
     printf("\t   CKSUM: 0x%04x", ntohs(ptcp->th_sum));
-    pdata = (u_char *)ptcp + ptcp->th_off*4;
+    pdata = (u_char *)ptcp + TH_OFF(ptcp)*4;
     if (verify_checksums) {
-	if ((u_long)pdata + tcp_data_length > ((u_long)plast+1))
+	if ((char *)pdata + tcp_data_length > ((char *)plast+1))
 	    printf(" (too short to verify)");
 	else
 	    printf(" (%s)", tcp_cksum_valid(pip,ptcp,plast)?"CORRECT":"WRONG");
@@ -399,24 +427,24 @@ printtcp_packet(
 
     printf("\t    DLEN: %u", tcp_data_length);
     if ((tcp_data_length != 0) &&
-	((u_long)pdata + tcp_data_length > ((u_long)plast+1))) {
-	int available =  (u_long)plast - (u_long)pdata + 1;
+	((char *)pdata + tcp_data_length > ((char *)plast+1))) {
+	int available =  (char *)plast - (char *)pdata + 1;
 	if (available > 1)
-	    printf(" (only %ld bytes in dump file)",
-		   (u_long)plast - (u_long)pdata + 1);
+	    printf(" (only %lu bytes in dump file)",
+		   (u_long)((char *)plast - (char *)pdata + 1));
 	else
 	    printf(" (none of it in dump file)");
     }
     printf("\n");
-    if (ptcp->th_off != 5) {
+    if (TH_OFF(ptcp) != 5) {
 	struct tcp_options *ptcpo;
 
-        printf("\t    OPTS: %u bytes",
-	       (ptcp->th_off*4) - sizeof(struct tcphdr));
-	if ((u_long)ptcp + ptcp->th_off*4 - 1 > (u_long)plast) {
+        printf("\t    OPTS: %lu bytes",
+	       (unsigned long)(TH_OFF(ptcp)*4) - sizeof(struct tcphdr));
+	if ((char *)ptcp + TH_OFF(ptcp)*4 - 1 > (char *)plast) {
 	    /* not all opts were stored */
-	    u_long available = 1 + (u_long)plast -
-		((u_long)ptcp + sizeof(struct tcphdr));
+	    u_long available = 1 + (char *)plast -
+		((char *)ptcp + sizeof(struct tcphdr));
 	    if (available > 1)
 		printf(" (%lu bytes in file)", available);
 	    else
@@ -440,9 +468,12 @@ printtcp_packet(
 	if (ptcpo->sack_count >= 0) {
 	    printf(" SACKS(%d)", ptcpo->sack_count);
 	    for (i=0; i < ptcpo->sack_count; ++i) {
-		printf("[0x%08lx-0x%08lx]",
-		       ptcpo->sacks[i].sack_left,
-		       ptcpo->sacks[i].sack_right);
+		printf("[%s-",
+		       PrintSeqRep(otherdir,
+				   (u_long)ptcpo->sacks[i].sack_left));
+		printf("%s]",
+		       PrintSeqRep(otherdir,
+				   (u_long)ptcpo->sacks[i].sack_right));
 	    }
 	}
 	if (ptcpo->echo_req != -1)
@@ -469,7 +500,7 @@ printtcp_packet(
     }
     if (tcp_data_length > 0) {
 	if (dump_packet_data) {
-	    char *ptcp_data = (char *)ptcp + (4 * ptcp->th_off);
+	    char *ptcp_data = (char *)ptcp + (4 * TH_OFF(ptcp));
 	    PrintRawData("   data", ptcp_data, plast, TRUE);
 	} else {
 	    printf("\t    data: %u bytes\n", tcp_data_length);
@@ -484,15 +515,16 @@ printudp_packet(
     void *plast)
 {
     struct udphdr *pudp;
+    unsigned udp_length;
+    unsigned udp_data_length;
     u_char *pdata;
 
     /* find the udp header */
-    pudp = getudp(pip, &plast);
-    if (pudp == NULL)
-	return;			/* not UDP */
+    if (getudp(pip, &pudp, &plast))
+      return;	  /* not UDP  or bad UDP packet */
 
     /* make sure we have enough of the packet */
-    if ((unsigned)pudp+sizeof(struct udphdr)-1 > (unsigned)plast) {
+    if ((char *)pudp+sizeof(struct udphdr)-1 > (char *)plast) {
 	if (warn_printtrunc)
 	    printf("\t[packet truncated too short for UDP details]\n");
 	++ctrunc;
@@ -506,10 +538,21 @@ printudp_packet(
 	   ntohs(pudp->uh_dport),
 	   ParenServiceName(ntohs(pudp->uh_dport)));
     pdata = (u_char *)pudp + sizeof(struct udphdr);
+    udp_length = ntohs(pudp->uh_ulen);
+    udp_data_length = udp_length - sizeof(struct udphdr);
+    printf("\t  UCKSUM: 0x%04x", ntohs(pudp->uh_sum));
+    pdata = (u_char *)pudp + sizeof(struct udphdr);
+    if (verify_checksums) {
+	if ((char *)pdata + udp_data_length > ((char *)plast+1))
+	    printf(" (too short to verify)");
+	else
+	    printf(" (%s)", udp_cksum_valid(pip,pudp,plast)?"CORRECT":"WRONG");
+    }
+    printf("\n");
     printf("\t    DLEN: %u", ntohs(pudp->uh_ulen));
-    if ((u_long)pdata + ntohs(pudp->uh_ulen) > ((u_long)plast+1))
-	printf(" (only %ld bytes in dump file)\n",
-	       (u_long)plast - (u_long)pdata + 1);
+    if ((char *)pdata + ntohs(pudp->uh_ulen) > ((char *)plast+1))
+	printf(" (only %lu bytes in dump file)\n",
+	       (u_long)((char *)plast - (char *)pdata + 1));
     if (ntohs(pudp->uh_ulen) > 0) {
 	if (dump_packet_data)
 	    PrintRawData("   data", pdata, plast, TRUE);
@@ -525,7 +568,8 @@ printpacket(
      void		*phys,
      int		phystype,
      struct ip		*pip,
-     void 		*plast)
+     void 		*plast,
+     tcb		*tcb)
 {
     if (len == 0)
 	/* original length unknown */
@@ -553,7 +597,7 @@ printpacket(
 
 
     /* this will fail if it's not TCP */
-    printtcp_packet(pip,plast);
+    printtcp_packet(pip,plast,tcb);
 
     /* this will fail if it's not UDP */
     printudp_packet(pip,plast);
@@ -571,7 +615,7 @@ ParenServiceName(
     if (!pname || isdigit((int)(*pname)))
 	return("");
 
-    sprintf(buf,"(%s)",pname);
+    snprintf(buf,sizeof(buf),"(%s)",pname);
     return(buf);
 }
 
@@ -587,7 +631,7 @@ ParenHostName(
     if (!pname || isdigit((int)(*pname)))
 	return("");
 
-    sprintf(buf,"(%s)",pname);
+    snprintf(buf,sizeof(buf),"(%s)",pname);
     return(buf);
 }
 
@@ -600,7 +644,7 @@ PrintRawData(
     Bool octal)			/* hex or octal? */
 {
     int lcount = 0;
-    int count = (unsigned)plast - (unsigned)pfirst + 1;
+    int count = (char *)plast - (char *)pfirst + 1;
     u_char *pch = pfirst;
 
     if (count <= 0)
@@ -675,6 +719,7 @@ printipv6(
 
     while (pheader) {
 	u_char old_nextheader = nextheader;
+
 	pheader = ipv6_nextheader(pheader,&nextheader);
 
 	/* if there isn't a "next", then this isn't an extension header */
@@ -698,7 +743,6 @@ ipv6addr2str(
 {
     static char adr[INET6_ADDRSTRLEN];
     my_inet_ntop(AF_INET6, (char *)&addr, (char *)adr, INET6_ADDRSTRLEN);
-    sprintf(adr,"%s", adr);
     return(adr);
 }
 
@@ -708,13 +752,35 @@ ipv6addr2str(
 /* and it messes up my cross-platform testing.  I'll just do it the */
 /* "one true" way!  :-)  */
 char *
-ether_ntoa (struct ether_addr *e)
+Ether_Ntoa (struct ether_addr *e)
 {
     unsigned char *pe;
     static char buf[30];
 
     pe = (unsigned char *) e;
-    sprintf(buf,"%02x:%02x:%02x:%02x:%02x:%02x",
+    snprintf(buf,sizeof(buf),"%02x:%02x:%02x:%02x:%02x:%02x",
 	    pe[0], pe[1], pe[2], pe[3], pe[4], pe[5]);
+    return(buf);
+}
+
+
+
+/* represent the sequence numbers absolute or relative to 0 */
+/* N.B.: will fail will sequence space wraps around more than once */
+static char *
+PrintSeqRep(
+    tcb *ptcb,
+    u_long seq)
+{
+    static char buf[20];
+    
+    if (ptcb && print_seq_zero && (ptcb->syn_count>0)) {
+	/* Relative form */
+	sprintf(buf,hex?"0x%08x(R)":"%u(R)",
+		seq - ptcb->syn);
+    } else {
+	/* Absolute form */
+	sprintf(buf,hex?"0x%08x":"%u",seq);
+    }
     return(buf);
 }

@@ -1,32 +1,58 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const rcsid_filter_vars[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/filter_vars.h,v 5.6 1999/02/25 15:01:37 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/filter_vars.h,v 5.10 2001/08/10 18:03:48 alakhian Exp $";
 
 
 /* just a big table of things that we can filter on */
@@ -59,6 +85,8 @@ struct filter_line filters[] = {
     {"win_zero_ct",	V_ULONG,  PTCB_C_S(win_zero_ct),"number of ZERO windows advertised"},
     {"min_seq",		V_ULONG,  PTCB_C_S(min_seq),"smallest sequence number"},
     {"max_seq",		V_ULONG,  PTCB_C_S(max_seq),"largest sequence number"},
+    {"num_sacks",	V_ULONG,  PTCB_C_S(num_sacks),"number of ACKs carrying SACKs"},
+    {"max_sacks",	V_ULONG,  PTCB_C_S(max_sack_blocks),"most SACK blocks in a single ACK"},
 
     /* synonyms */
     {"segs",		V_ULLONG, PTCB_C_S(packets),"total segments"},
@@ -100,8 +128,13 @@ struct filter_line filters[] = {
 
     {"trunc_bytes",	V_ULLONG, PTCB_C_S(trunc_bytes), "number of bytes not in the file"},
     {"trunc_segs", 	V_ULLONG, PTCB_C_S(trunc_segs), "number of segments not in the file"},
+    {"num_zwnd_probes", V_ULONG, PTCB_C_S(num_zwnd_probes), "number of zero window probes"},
+    {"zwnd_probe_bytes", V_ULONG, PTCB_C_S(zwnd_probe_bytes), "number of window probe bytes"},
+   
+    {"urg_data_pkts", V_ULONG, PTCB_C_S(urg_data_pkts), "Number of packets with URGENT bit set"},
+    {"urg_data_bytes", V_ULONG, PTCB_C_S(urg_data_bytes), "Number of bytes of urgent data"},
 
-    /* HOST IP addresses */
+   /* HOST IP addresses */
     {"hostaddr",	V_IPADDR,
      PTP(addr_pair.a_address, addr_pair.b_address),
      "IP Address (v4 or v6 in standard textual notation"},

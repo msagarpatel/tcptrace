@@ -1,35 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcptrace.c,v 5.25 1999/09/15 12:48:04 sdo Exp $";
-
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.c,v 5.51 2003/04/03 23:38:48 mramadas Exp $";
 
 #include "tcptrace.h"
 #include "file_formats.h"
@@ -60,7 +85,9 @@ static void UsageModules(void);
 static void LoadModules(int argc, char *argv[]);
 static void CheckArguments(int *pargc, char *argv[]);
 static void ParseArgs(char *argsource, int *pargc, char *argv[]);
-static void ParseExtendedArg(char *argsource, char *arg);
+static int  ParseExtendedOpt(char *argsource, char *arg);
+static void ParseExtendedBool(char *argsource, char *arg);
+static void ParseExtendedVar(char *argsource, char *arg);
 static void ProcessFile(char *filename);
 static void QuitSig(int signum);
 static void Usage(void);
@@ -76,12 +103,13 @@ Bool graph_rtt = FALSE;
 Bool graph_tput = FALSE;
 Bool graph_tsg = FALSE;
 Bool graph_segsize = FALSE;
-Bool graph_cwin = FALSE;
+Bool graph_owin = FALSE;
+Bool graph_tline = FALSE;
 Bool hex = TRUE;
 Bool ignore_non_comp = FALSE;
 Bool dump_packet_data = FALSE;
 Bool print_rtt = FALSE;
-Bool print_cwin = FALSE;
+Bool print_owin = FALSE;
 Bool printbrief = TRUE;
 Bool printsuppress = FALSE;
 Bool printem = FALSE;
@@ -93,9 +121,11 @@ Bool warn_printbadmbz = FALSE;
 Bool warn_printhwdups = FALSE;
 Bool warn_printbadcsum = FALSE;
 Bool warn_printbad_syn_fin_seq = FALSE;
+Bool docheck_hw_dups = TRUE;
 Bool save_tcp_data = FALSE;
 Bool graph_time_zero = FALSE;
 Bool graph_seq_zero = FALSE;
+Bool print_seq_zero = FALSE;
 Bool graph_zero_len_pkts = TRUE;
 Bool plot_tput_instant = TRUE;
 Bool filter_output = FALSE;
@@ -105,6 +135,17 @@ Bool resolve_ipaddresses = TRUE;
 Bool resolve_ports = TRUE;
 Bool verify_checksums = FALSE;
 Bool triple_dupack_allows_data = FALSE;
+Bool run_continuously = FALSE;
+Bool xplot_all_files = FALSE;
+Bool conn_num_threshold = FALSE;
+Bool ns_hdrs = TRUE;
+Bool csv = FALSE;
+Bool tsv = FALSE;
+u_long remove_live_conn_interval = REMOVE_LIVE_CONN_INTERVAL;
+u_long nonreal_live_conn_interval = NONREAL_LIVE_CONN_INTERVAL;
+u_long remove_closed_conn_interval = REMOVE_CLOSED_CONN_INTERVAL;
+u_long update_interval = UPDATE_INTERVAL;
+u_long max_conn_num = MAX_CONN_NUM;
 int debug = 0;
 u_long beginpnum = 0;
 u_long endpnum = 0;
@@ -114,12 +155,18 @@ u_long bad_ip_checksums = 0;
 u_long bad_tcp_checksums = 0;
 u_long bad_udp_checksums = 0;
 
+/* extended variables with values */
+char *output_file_dir = NULL;
+char *output_file_prefix = NULL;
+char *xplot_title_prefix = NULL;
+char *xplot_args = NULL;
+char *sv = NULL;
 /* globals */
 struct timeval current_time;
 int num_modules = 0;
 char *ColorNames[NCOLORS] =
 {"green", "red", "blue", "yellow", "purple", "orange", "magenta", "pink"};
-
+char *comment;
 
 /* locally global variables */
 static u_long filesize = 0;
@@ -129,6 +176,11 @@ u_int numfiles;
 char *cur_filename;
 static char *progname;
 char *output_filename = NULL;
+static char *update_interval_st = NULL;
+static char *max_conn_num_st = NULL;
+static char *live_conn_interval_st = NULL;
+static char *nonreal_conn_interval_st = NULL;
+static char *closed_conn_interval_st = NULL;
 
 /* for elapsed processing time */
 struct timeval wallclock_start;
@@ -155,12 +207,16 @@ static struct ext_bool_op {
      "mark out-of-order on time sequence graphs"},
     {"showzerowindow", &show_zero_window,  TRUE,
      "mark zero windows on time sequence graphs"},
+    {"showurg", &show_urg,  TRUE,
+     "mark packets with URGENT bit set on the time sequence graphs"},
     {"showrttdongles", &show_rtt_dongles,  TRUE,
      "mark non-RTT-generating ACKs with special symbols"},
     {"showdupack3", &show_triple_dupack,  TRUE,
      "mark triple dupacks on time sequence graphs"},
     {"showzerolensegs", &graph_zero_len_pkts,  TRUE,
      "show zero length packets on time sequence graphs"},
+    {"showzwndprobes", &show_zwnd_probes, TRUE,
+     "show zero window probe packets on time sequence graphs"},
     {"showtitle", &show_title,  TRUE,
      "show title on the graphs"},
     {"res_addr", &resolve_ipaddresses,  TRUE,
@@ -171,6 +227,8 @@ static struct ext_bool_op {
      "verify IP and TCP checksums"},
     {"dupack3_data", &triple_dupack_allows_data, TRUE,
      "count a duplicate ACK carrying data as a triple dupack"},
+    {"check_hwdups", &docheck_hw_dups, TRUE,
+     "check for 'hardware' dups"},
     {"warn_ooo", &warn_ooo,  TRUE,
      "print warnings when packets timestamps are out of order"},
     {"warn_printtrunc", &warn_printtrunc,  TRUE,
@@ -185,11 +243,90 @@ static struct ext_bool_op {
      "print warnings when SYNs or FINs rexmitted with different sequence numbers"},
     {"dump_packet_data", &dump_packet_data, TRUE,
      "print all packets AND dump the TCP/UDP data"},
+    {"continuous", &run_continuously, TRUE,
+     "run continuously and don't provide a summary"},
+    {"print_seq_zero", &print_seq_zero, TRUE,
+     "print sequence numbers as offset from initial sequence number"},
+    {"limit_conn_num", &conn_num_threshold, TRUE,
+     "limit the maximum number of connections kept at a time in real-time mode"},
+    {"xplot_all_files", &xplot_all_files, TRUE,
+     "display all generated xplot files at the end"},
+    {"ns_hdrs", &ns_hdrs, TRUE,
+     "assume that ns has the useHeaders_flag true (uses IP+TCP headers)"},
+    {"csv", &csv, TRUE,
+     "display the long output as comma separated values"},
+    {"tsv", &tsv, TRUE,
+     "display the long output as tab separated values"},
 
 };
 #define NUM_EXTENDED_BOOLS (sizeof(extended_bools) / sizeof(struct ext_bool_op))
 
 
+/* extended variable verification routines */
+static u_long VerifyPositive(char *varname, char *value);
+static void VerifyUpdateInt(char *varname, char *value);
+static void VerifyMaxConnNum(char *varname, char *value);
+static void VerifyLiveConnInt(char *varname, char *value);
+static void VerifyNonrealLiveConnInt(char *varname, char*value);
+static void VerifyClosedConnInt(char *varname, char *value);
+
+/* extended variable options */
+/* they must all be strings */
+static struct ext_var_op {
+    char *var_optname;		/* what it's called when you set it */
+    char **var_popt;		/* the variable itself */
+    void (*var_verify)(char *varname,
+		       char *value);
+				/* function to call to verify that the
+				   value is OK (if non-null) */
+    char *var_descr;		/* variable description */
+} extended_vars[] = {
+    {"output_dir", &output_file_dir, NULL,
+     "directory where all output files are placed"},
+    {"output_prefix", &output_file_prefix, NULL,
+     "prefix all output files with this string"},
+    {"xplot_title_prefix", &xplot_title_prefix, NULL,
+     "prefix to place in the titles of all xplot files"},
+    {"update_interval", &update_interval_st, VerifyUpdateInt,
+     "time interval for updates in real-time mode"},
+    {"max_conn_num", &max_conn_num_st, VerifyMaxConnNum,
+     "maximum number of connections to keep at a time in real-time mode"},
+    {"remove_live_conn_interval", &live_conn_interval_st, VerifyLiveConnInt,
+     "idle time after which an open connection is removed in real-time mode"},
+    {"nonreal_live_conn_interval", &nonreal_conn_interval_st, VerifyNonrealLiveConnInt,
+     "idle time after which an open connection is removed in nonreal-time mode"},
+     {"remove_closed_conn_interval", &closed_conn_interval_st, VerifyClosedConnInt,
+     "time interval after which a closed connection is removed in real-time mode"},
+    {"xplot_args", &xplot_args, NULL,
+     "arguments to pass to xplot, if we are calling xplot from here"},
+    {"sv", &sv, NULL,
+     "separator to use for long output with <STR>-separated-values"},
+   
+};
+#define NUM_EXTENDED_VARS (sizeof(extended_vars) / sizeof(struct ext_var_op))
+
+// Extended option verification routines
+static void Ignore(char *argsource, char *opt);
+static void GrabOnly(char *argsource, char *opt);
+static void IgnoreUDP(char *argsource, char *opt);
+static void GrabOnlyUDP(char *argsource, char *opt);
+
+// Extended options to allow --iudp and --oudp to be able to 
+// specifically ignore or output UDP connections.
+// For sake of clarity, options --itcp and --otcp shall also be added
+// to do the same job done by -i and -o options currently.
+static struct ext_opt {
+     char *opt_name;  // what it is called
+     void (*opt_func) (char *argsource, char *opt);
+     char *opt_descr;
+} extended_options[] = {
+     {"iTCP",Ignore,"ignore specific TCP connections, same as -i"},
+     {"oTCP",GrabOnly,"only specific TCP connections, same as -o"},
+     {"iUDP",IgnoreUDP,"ignore specific UDP connections"},
+     {"oUDP",GrabOnlyUDP,"only specific UDP connections"}
+
+};
+#define NUM_EXTENDED_OPTIONS (sizeof(extended_options)/sizeof(struct ext_opt))
 
 static void
 Help(
@@ -430,18 +567,19 @@ Graphing options\n\
   -T      create throughput graph[s], (average over 10 segments, see -A)\n\
   -R      create rtt sample graph[s]\n\
   -S      create time sequence graph[s]\n\
-  -N      create cwin graph[s] (data on _N_etwork)\n\
+  -N      create owin graph[s] (_o_utstanding data on _N_etwork)\n\
   -F      create segsize graph[s]\n\
+  -L      create time line graph[s]\n\
   -G	  create ALL graphs\n\
 Output format detail options\n\
   -D      print in decimal\n\
-  -X      print in hexidecimal\n\
+  -X      print in hexadecimal\n\
   -n      don't resolve host or service names (much faster)\n\
   -s      use short names (list \"picard.cs.ohiou.edu\" as just \"picard\")\n\
 Connection filtering options\n\
   -iN     ignore connection N (can use multiple times)\n\
   -oN[-M] only connection N (or N through M).  Arg can be used many times.\n\
-          In N is a file rather than a number, read list from file instead.\n\
+          If N is a file rather than a number, read list from file instead.\n\
   -c      ignore non-complete connections (didn't see syn's and fin's)\n\
   -BN     first segment number to analyze (default 1)\n\
   -EN     last segment number to analyze (default last in file)\n\
@@ -466,7 +604,7 @@ Misc options\n\
   -d      whistle while you work (enable debug, use -d -d for more output)\n\
   -e      extract contents of each TCP stream into file\n\
   -h      print help messages\n\
-  -u      print minimal UDP information too\n\
+  -u      perform (minimal) UDP analysis too\n\
   -Ofile  dump matched packets to tcpdump file 'file'\n\
   +[v]    reverse the setting of the -[v] flag (for booleans)\n\
 Dump File Names\n\
@@ -476,7 +614,7 @@ Dump File Names\n\
     rather than from a file\n\
 ");
 
-    fprintf(stderr,"\nExtended boolean options, mostly for graphing options\n");
+    fprintf(stderr,"\nExtended boolean options\n");
     fprintf(stderr," (unambiguous prefixes also work)\n");
     for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
 	struct ext_bool_op *pbop = &extended_bools[i];
@@ -486,6 +624,19 @@ Dump File Names\n\
 	fprintf(stderr,"  --no%-18s DON'T %s %s\n",
 		pbop->bool_optname, pbop->bool_descr,
 		(*pbop->bool_popt != pbop->bool_default)?"(default)":"");
+    }
+
+    fprintf(stderr,"\nExtended variable options\n");
+    fprintf(stderr," (unambiguous prefixes also work)\n");
+    for (i=0; i < NUM_EXTENDED_VARS; ++i) {
+	char buf[256];		/* plenty large, but checked below with strncpy */
+	struct ext_var_op *pvop = &extended_vars[i];
+	strncpy(buf,pvop->var_optname,sizeof(buf)-10);
+	strcat(buf,"=\"STR\"");
+	fprintf(stderr,"  --%-20s %s (default: '%s')\n",
+		buf,
+		pvop->var_descr,
+		(*pvop->var_popt)?*pvop->var_popt:"<NULL>");
     }
 
     fprintf(stderr,"\n\
@@ -558,12 +709,13 @@ main(
 {
     int i;
     double etime;
-
+   
     if (argc == 1)
 	Help(NULL);
 
     /* initialize internals */
     trace_init();
+    udptrace_init();
     plot_init();
 
     /* let modules start first */
@@ -572,15 +724,28 @@ main(
     /* parse the flags */
     CheckArguments(&argc,argv);
 
+    /* Used with <SP>-separated-values,
+     * prints a '#' before each header line if --csv/--tsv is requested.
+     */
+   comment = (char *)malloc(sizeof(char *) * 2);
+   memset(comment, 0, sizeof(comment));
+   if(csv || tsv || (sv != NULL))
+     snprintf(comment, sizeof(comment), "#");
+
     /* optional UDP */
-    if (do_udp)
-	udptrace_init();
+//    if (do_udp)
+//	udptrace_init();
+
+  //  if (run_continuously) {
+    //  trace_init();
+    //}
 
     /* get starting wallclock time */
     gettimeofday(&wallclock_start, NULL);
 
     num_files = argc;
-    printf("%d arg%s remaining, starting with '%s'\n",
+    printf("%s%d arg%s remaining, starting with '%s'\n",
+	   comment,
 	   num_files,
 	   num_files>1?"s":"",
 	   filenames[0]);
@@ -591,16 +756,16 @@ main(
 	DumpFlags();
 
     /* knock, knock... */
-    printf("%s\n\n", VERSION);
+    printf("%s%s\n\n", comment, VERSION);
 
     /* read each file in turn */
     numfiles = argc;
     for (i=0; i < argc; ++i) {
 	if (debug || (numfiles > 1)) {
 	    if (argc > 1)
-		printf("Running file '%s' (%d of %d)\n", filenames[i], i+1, numfiles);
+		printf("%sRunning file '%s' (%d of %d)\n", comment, filenames[i], i+1, numfiles);
 	    else
-		printf("Running file '%s'\n", filenames[i]);
+		printf("%sRunning file '%s'\n", comment, filenames[i]);
 	}
 
 	/* do the real work */
@@ -615,38 +780,40 @@ main(
     gettimeofday(&wallclock_finished, NULL);
 
     /* general output */
-    fprintf(stdout, "%lu packets seen, %lu TCP packets traced",
-	    pnum, tcp_trace_count);
+    fprintf(stdout, "%s%lu packets seen, %lu TCP packets traced",
+	    comment, pnum, tcp_trace_count);
     if (do_udp)
 	fprintf(stdout,", %lu UDP packets traced", udp_trace_count);
     fprintf(stdout,"\n");
 
     /* processing time */
     etime = elapsed(wallclock_start,wallclock_finished);
-    fprintf(stdout, "elapsed wallclock time: %s, %d pkts/sec analyzed\n",
+    fprintf(stdout, "%selapsed wallclock time: %s, %d pkts/sec analyzed\n",
+	    comment,
 	    elapsed2str(etime),
 	    (int)((double)pnum/(etime/1000000)));
 
     /* actual tracefile times */
     etime = elapsed(first_packet,last_packet);
-    fprintf(stdout,"trace %s elapsed time: %s\n",
+    fprintf(stdout,"%strace %s elapsed time: %s\n",
+	    comment,
 	    (num_files==1)?"file":"files",
 	    elapsed2str(etime));
     if (debug) {
-	fprintf(stdout,"\tfirst packet:  %s\n", ts2ascii(&first_packet));
-	fprintf(stdout,"\tlast packet:   %s\n", ts2ascii(&last_packet));
+	fprintf(stdout,"%s\tfirst packet:  %s\n", comment, ts2ascii(&first_packet));
+	fprintf(stdout,"%s\tlast packet:   %s\n", comment, ts2ascii(&last_packet));
     }
     if (verify_checksums) {
-	fprintf(stdout,"bad IP checksums:  %ld\n", bad_ip_checksums);
-	fprintf(stdout,"bad TCP checksums: %ld\n", bad_tcp_checksums);
+	fprintf(stdout,"%sbad IP checksums:  %ld\n", comment, bad_ip_checksums);
+	fprintf(stdout,"%sbad TCP checksums: %ld\n", comment, bad_tcp_checksums);
 	if (do_udp)
-	    fprintf(stdout,"bad UDP checksums: %ld\n", bad_udp_checksums);
+	    fprintf(stdout,"%sbad UDP checksums: %ld\n", comment, bad_udp_checksums);
     }
 
     /* close files, cleanup, and etc... */
     trace_done();
-    if (do_udp)
-	udptrace_done();
+    udptrace_done();
+
     FinishModules();
     plotter_done();
 
@@ -678,10 +845,17 @@ ProcessFile(
     /* share the current file name */
     cur_filename = filename;
 
+#ifdef __WIN32
+    /* If the file is compressed, exit (Windows version does not support compressed dump files) */
+    if (CompOpenHeader(filename) == (FILE *)-1) {
+	exit(-1);
+    }
+#else   
     /* open the file header */
     if (CompOpenHeader(filename) == NULL) {
 	exit(-1);
     }
+#endif /* __WIN32 */   
 
     /* see how big the file is */
     if (FileIsStdin(filename)) {
@@ -698,14 +872,14 @@ ProcessFile(
     /* determine which input file format it is... */
     ppread = NULL;
     if (debug>1)
-	printf("NUM_FILE_FORMATS: %d\n", NUM_FILE_FORMATS);
+	printf("NUM_FILE_FORMATS: %u\n", (unsigned)NUM_FILE_FORMATS);
     for (fix=0; fix < NUM_FILE_FORMATS; ++fix) {
 	if (debug)
 	    fprintf(stderr,"Checking for file format '%s' (%s)\n",
 		    file_formats[fix].format_name,
 		    file_formats[fix].format_descr);
 	rewind(stdin);
-	ppread = (*file_formats[fix].test_func)();
+       	ppread = (*file_formats[fix].test_func)(filename);
 	if (ppread) {
 	    if (debug)
                 fprintf(stderr,"File format is '%s' (%s)\n",
@@ -752,10 +926,12 @@ rather than:\n\
 	exit(1);
     }
 
+#ifndef __WIN32   
     /* open the file for processing */
     if (CompOpenFile(filename) == NULL) {
 	exit(-1);
     }
+#endif /* __WIN32 */   
 
     /* how big is it.... (possibly compressed) */
     if (debug) {
@@ -880,7 +1056,7 @@ That will likely confuse the program, so be careful!\n", filename);
 	    if (debug)
 		fprintf(stderr,
 			"Skipping packet %lu, not an IPv4/v6 packet (version:%d)\n",
-			pnum,pip->ip_v);
+			pnum,IP_V(pip));
 	    continue;
 	}
 
@@ -906,7 +1082,7 @@ for other packet types, I just don't have a place to test them\n\n");
 	/* print the packet, if requested */
 	if (printallofem || dump_packet_data) {
 	    printf("Packet %lu\n", pnum);
-	    printpacket(len,tlen,phys,phystype,pip,plast);
+	    printpacket(len,tlen,phys,phystype,pip,plast,NULL);
 	}
 
 	/* keep track of global times */
@@ -925,17 +1101,17 @@ for other packet types, I just don't have a place to test them\n\n");
 	}
 		       
 	/* find the start of the TCP header */
-	ptcp = gettcp (pip, &plast);
+	ret = gettcp (pip, &ptcp, &plast);
 
 	/* if that failed, it's not TCP */
-	if (ptcp == NULL) {
+	if (ret < 0) {
 	    udp_pair *pup;
 	    struct udphdr *pudp;
 
 	    /* look for a UDP header */
-	    pudp = getudp(pip, &plast);
+	    ret = getudp(pip, &pudp, &plast);
 
-	    if (do_udp && (pudp != NULL)) {
+	    if (do_udp && (ret == 0)) {
 		pup = udpdotrace(pip,pudp,plast);
 
 		/* verify UDP checksums, if requested */
@@ -954,12 +1130,15 @@ for other packet types, I just don't have a place to test them\n\n");
 		    ModulesPerUDPConn(pup);
 		/* also, pass the packet to any modules defined */
 		ModulesPerUDPPacket(pip,pup,plast);
-	    } else if (pudp == NULL) {
+	    } else if (ret < 0) {
 		/* neither UDP not TCP */
 		ModulesPerNonTCPUDP(pip,plast);
 	    }
 	    continue;
 	}
+        else if (ret > 0) { /* not a valid TCP packet */
+	  continue;
+        }
 
 	/* verify TCP checksums, if requested */
 	if (verify_checksums) {
@@ -1027,6 +1206,7 @@ QuitSig(
     printf("%c\n\n", 7);  /* BELL */
     printf("Terminating processing early on signal %d\n", signum);
     printf("Partial result after processing %lu packets:\n\n\n", pnum);
+    FinishModules();
     plotter_done();
     trace_done();
     exit(1);
@@ -1082,70 +1262,283 @@ ReallocZ(
 }
 
 static void
+Ignore(
+       char *argsource,
+       char *opt)
+{
+     char *o_arg;
+		      
+     /* next part of arg is a filename or number list */
+     if (*opt == '\00') {
+	  BadArg(argsource,
+		 "Expected filename or number list *immediately* after -i / --iTCP\n");
+     }
+
+     if (run_continuously) {
+	  fprintf(stderr, 
+		  "Warning: cannot ignore connections in continuous mode\n");
+     }
+     
+     /* option is a list of connection numbers separated by commas */
+     /* option can be immediately "here" or given as a file name */
+     if (isdigit((int)(*opt)))  // --iTCP1 case
+	  o_arg=opt;
+     else {
+	  /* it's in a file */	  
+	  /* open the file */
+	  o_arg = FileToBuf(opt);
+	  /* if that fails, it's a command line error */
+	  if (o_arg == NULL) 
+	       BadArg(argsource,
+		      "Expected filename or number list *immediately* after -i/--iTCP\n");
+     }
+     /* wherever we got it, o_arg is a connection list */
+     while (o_arg && *o_arg) {
+	  int num1,num2;
+	  
+	  if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
+	       /* process range */
+	       if (num2 <= num1) {
+		    BadArg(argsource,
+			   "-iX-Y / --iTCPX-Y, must have X<Y, '%s'\n", o_arg);
+	       }
+	       if (debug)
+		    printf("setting IgnoreConn(%d-%d)\n", num1, num2);
+	       
+	       while (num1<=num2) {
+		    if (debug > 1)
+			 printf("setting IgnoreConn(%d)\n", num1);
+		    IgnoreConn(num1++);
+		    
+	       }
+	  } else if (sscanf(o_arg,"%d",&num1) == 1) {
+	       /* single argument */
+	       if (debug)
+		    printf("setting IgnoreConn(%d)\n", num1);
+	       IgnoreConn(num1);
+	  } else {
+	       /* error */
+	       BadArg(argsource,
+		      "Don't understand conn number starting at '%s'\n", o_arg);
+	  }
+	  
+	  /* look for the next comma */
+	  o_arg = strchr(o_arg,',');
+	  if (o_arg)
+	       ++o_arg;
+     }
+}
+
+static void
 GrabOnly(
     char *argsource,
     char *opt)
 {
-    char *o_arg;
-		      
-    /* next part of arg is a filename or number list */
-    if (*opt == '\00') {
-	BadArg(argsource,"Expected filename or number list\n");
-    }
+     char *o_arg;
+     
+     /* next part of arg is a filename or number list */
+     if (*opt == '\00') {
+	  BadArg(argsource,
+		 "Expected filename or number list *immediately* after -o / --oTCP\n");
+     }
 
-    /* option is a list of connection numbers separated by commas */
-    /* option can be immediately "here" or given as a file name */
-    if (isdigit((int)(*opt))) {
-	/* list is on the command line */
-	o_arg = opt;
-    } else {
-	/* it's in a file */
+     if (run_continuously) {
+	  fprintf(stderr, 
+		  "Warning: cannot 'grab-only' connections in continuous mode\n");
+     }
 
-	/* open the file */
-	o_arg = FileToBuf(opt);
-
-	/* if that fails, it's a command line error */
-	if (o_arg == NULL) {
-	    Usage();
-	}
-    }
-
-    /* wherever we got it, o_arg is a connection list */
-    while (o_arg && *o_arg) {
-	int num1,num2;
-	
-	if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
-	    /* process range */
-	    if (num2 <= num1) {
-		BadArg(argsource,
-		       "-oX-Y, must have X<Y, '%s'\n", o_arg);
-	    }
-	    if (debug)
-		printf("setting OnlyConn(%d-%d)\n", num1, num2);
-
-	    while (num1<=num2) {
-		if (debug > 1)
+     /* option is a list of connection numbers separated by commas */
+     /* option can be immediately "here" or given as a file name */
+     if (isdigit((int)(*opt))) {
+	  /* list is on the command line */
+	  o_arg = opt;
+     } else {
+	  /* it's in a file */
+	  /* open the file */
+	  o_arg = FileToBuf(opt);
+	  
+	  /* if that fails, it's a command line error */
+	  if (o_arg == NULL) {
+	       BadArg(argsource,"Expected filename or number list *immediately* after -o / --oTCP\n");
+	  }
+     }
+     
+     /* wherever we got it, o_arg is a connection list */
+     while (o_arg && *o_arg) {
+	  int num1,num2;
+	  
+	  if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
+	       /* process range */
+	       if (num2 <= num1) {
+		    BadArg(argsource,
+			   "-oX-Y / --oTCPX-Y, must have X<Y, '%s'\n", 
+			   o_arg);
+	       }
+	       if (debug)
+		    printf("setting OnlyConn(%d-%d)\n", num1, num2);
+	       
+	       while (num1<=num2) {
+		    if (debug > 1)
+			 printf("setting OnlyConn(%d)\n", num1);
+		    OnlyConn(num1++);
+	       }
+	  } else if (sscanf(o_arg,"%d",&num1) == 1) {
+	       /* single argument */
+	       if (debug)
 		    printf("setting OnlyConn(%d)\n", num1);
-		OnlyConn(num1++);
-	    }
-	} else if (sscanf(o_arg,"%d",&num1) == 1) {
-	    /* single argument */
-	    if (debug)
-		printf("setting OnlyConn(%d)\n", num1);
-	    OnlyConn(num1);
-	} else {
-	    /* error */
-	    BadArg(argsource,
-		   "Don't understand conn number starting at '%s'\n", o_arg);
-	}
-		   
-	/* look for the next comma */
-	o_arg = strchr(o_arg,',');
-	if (o_arg)
-	    ++o_arg;
-    }
+	       OnlyConn(num1);
+	  } else {
+	       /* error */
+	       BadArg(argsource,
+		      "Don't understand conn number starting at '%s'\n", o_arg);
+	  }
+	  
+	  /* look for the next comma */
+	  o_arg = strchr(o_arg,',');
+	  if (o_arg)
+	       ++o_arg;
+     }
 }
 
+static void
+     IgnoreUDP(
+	       char *argsource,
+	       char *opt)
+{
+     char *o_arg;
+     
+     /* next part of arg is a filename or number list */
+     if (*opt == '\00') {
+	  BadArg(argsource,
+		 "Expected filename or number list *immediately* after --iUDP\n");
+     }
+
+     if (run_continuously) {
+	  fprintf(stderr, 
+		  "Warning: cannot ignore UDP connections in continuous mode\n");
+     }
+
+     /* option is a list of connection numbers separated by commas */
+     /* option can be immediately "here" or given as a file name */
+     if (isdigit((int)(*opt)))  // --iUDP1 case
+	  o_arg=opt;
+     else {
+	  /* it's in a file */	  
+	  /* open the file */
+	  o_arg = FileToBuf(opt);
+	  /* if that fails, it's a command line error */
+	  if (o_arg == NULL) 
+	       BadArg(argsource,
+		      "Expected filename or number list *immediately* after --iUDP\n");
+
+     }
+     /* wherever we got it, o_arg is a connection list */
+     while (o_arg && *o_arg) {
+	  int num1,num2;
+	  
+	  if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
+	       /* process range */
+	       if (num2 <= num1) {
+		    BadArg(argsource,
+			   "--iUDPX-Y, must have X<Y, '%s'\n", o_arg);
+	       }
+	       if (debug)
+		    printf("setting IgnoreUDPConn(%d-%d)\n", num1,num2);
+	       
+	       while (num1<=num2) {
+		    if (debug > 1)
+			 printf("setting IgnoreUDPConn(%d)\n", num1);
+		    IgnoreUDPConn(num1++);
+		    
+	       }
+	  } else if (sscanf(o_arg,"%d",&num1) == 1) {
+	       /* single argument */
+	       if (debug)
+		    printf("setting IgnoreUDPConn(%d)\n", num1);
+	       IgnoreUDPConn(num1);
+	  } else {
+	       /* error */
+	       BadArg(argsource,
+		      "Don't understand conn number starting at '%s'\n", o_arg);
+	  }
+	  
+	  /* look for the next comma */
+	  o_arg = strchr(o_arg,',');
+	  if (o_arg)
+	       ++o_arg;
+     }
+}
+
+static void
+     GrabOnlyUDP(
+		 char *argsource,
+		 char *opt)
+{
+     char *o_arg;
+     
+     /* next part of arg is a filename or number list */
+     if (*opt == '\00') {
+	  BadArg(argsource,"Expected filename or number list *immediately* after --oUDP\n");
+     }
+
+     if (run_continuously) {
+	  fprintf(stderr, 
+		  "Warning: cannot 'grab-only' UDP connections in continuous mode\n");
+     }
+     
+     /* option is a list of connection numbers separated by commas */
+     /* option can be immediately "here" or given as a file name */
+     if (isdigit((int)(*opt))) {
+	  /* list is on the command line */
+	  o_arg = opt;
+     } else {
+	  /* it's in a file */
+	  
+	  /* open the file */
+	  o_arg = FileToBuf(opt);
+	  
+	  /* if that fails, it's a command line error */
+	  if (o_arg == NULL) {
+	       BadArg(argsource,"Expected filename or number list *immediately* after --oUDP\n");
+	  }
+     }
+     
+     /* wherever we got it, o_arg is a connection list */
+     while (o_arg && *o_arg) {
+	  int num1,num2;
+	  
+	  if (sscanf(o_arg,"%d-%d",&num1,&num2) == 2) {
+	       /* process range */
+	       if (num2 <= num1) {
+		    BadArg(argsource,
+			   "--oUDPX-Y, must have X<Y, '%s'\n", o_arg);
+	       }
+	       if (debug)
+		    printf("setting OnlyUDPConn(%d-%d)\n", num1, num2);
+	       
+	       while (num1<=num2) {
+		    if (debug > 1)
+			 printf("setting OnlyUDPConn(%d)\n", num1);
+		    OnlyUDPConn(num1++);
+	       }
+	  } else if (sscanf(o_arg,"%d",&num1) == 1) {
+	       /* single argument */
+	       if (debug)
+		    printf("setting OnlyUDPConn(%d)\n", num1);
+	       OnlyUDPConn(num1);
+	  } else {
+	       /* error */
+	       BadArg(argsource,
+		      "Don't understand conn number starting at '%s'\n", 
+		      o_arg);
+	  }
+	  
+	  /* look for the next comma */
+	  o_arg = strchr(o_arg,',');
+	  if (o_arg)
+	       ++o_arg;
+     }
+}
 
 /* convert a buffer to an argc,argv[] pair */
 void
@@ -1218,9 +1611,11 @@ CheckArguments(
     if ((home = getenv("HOME")) != NULL) {
 	struct stat statbuf;
 
-	rc_path = malloc(strlen(home)+strlen(TCPTRACE_RC_FILE)+2);
+	int rc_len=strlen(home)+strlen(TCPTRACE_RC_FILE)+2;
 
-	sprintf(rc_path, "%s/%s", home, TCPTRACE_RC_FILE);
+	rc_path = malloc(rc_len);
+
+	snprintf(rc_path,rc_len, "%s/%s", home, TCPTRACE_RC_FILE);
 	if (debug>1)
 	    printf("Looking for resource file '%s'\n", rc_path);
 
@@ -1339,13 +1734,54 @@ CheckArguments(
     }
 }
 
+// these extended options are table driven, to make it easier to
+// add more later without messing them up.
+// Initially they include --iTCP, --iUDP to ignore TCP, UDP connections
+// and --oTCP, --oUDP to output only TCP, UDP connections.
+static int
+ParseExtendedOpt(
+    char *argsource,
+    char *arg)
+{
+     int i;
+     struct ext_opt *popt_found = NULL;
+     char *argtext,*opt;
+     int arglen;
+     
+     /* there must be at least SOME text there */
+     if (strcmp(arg,"--") == 0)
+	  BadArg(argsource, "Void extended filter argument\n");
+     
+     /* find just the arg text */
+     argtext = arg+2;
+     arglen = strlen(argtext);
+     
+
+     /* search for a match on each extended boolean opt */
+     for (i=0; i < NUM_EXTENDED_OPTIONS; ++i) {
+	  struct ext_opt *popt = &extended_options[i];
+
+	  if (strncasecmp(argtext,popt->opt_name,
+		      strlen(popt->opt_name)) == 0 ) {
+	       popt_found = popt;
+	       opt=argtext+strlen(popt->opt_name);
+	       break;
+	  }
+     }
+          
+     /* if we never found a match, it's an error */
+     if (popt_found == NULL)
+	  return 0;
+     
+     (*popt_found->opt_func)(argsource,opt);
+     return 1;
+}
 
 
-
-/* these extended boolean options are table driven, to make it easier to add more
-   later without messing them up */
+/* these extended boolean options are table driven, to make it easier to
+   add more later without messing them up */
 static void
-ParseExtendedArg(
+ParseExtendedBool(
     char *argsource,
     char *arg)
 {
@@ -1359,7 +1795,7 @@ ParseExtendedArg(
 
     /* there must be at least SOME text there */
     if ((strcmp(arg,"--") == 0) || (strcmp(arg,"--no") == 0))
-	BadArg(argsource, "Void extended argument\n");
+	BadArg(argsource, "Void extended boolean argument\n");
 
     /* find just the arg text */
     if (strncmp(arg,"--no",4) == 0) {
@@ -1372,7 +1808,7 @@ ParseExtendedArg(
     arglen = strlen(argtext);
 
 
-    /* search for a match on each extended arg */
+    /* search for a match on each extended boolean arg */
     for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
 	struct ext_bool_op *pbop = &extended_bools[i];
 
@@ -1393,10 +1829,9 @@ ParseExtendedArg(
 
 
     /* if we never found a match, it's an error */
-    if ((pbop_found == NULL) && (pbop_prefix == NULL)) {
-	BadArg(argsource, "Bad extended argument '%s' (see -hargs)\n", arg);
-	return;
-    }
+    if ((pbop_found == NULL) && (pbop_prefix == NULL))
+	BadArg(argsource, "Unknown extended boolean argument '%s' (see -hargs)\n", arg);
+
 
     /* if the prefix is UNambiguous, that's good enough */
     if ((pbop_prefix != NULL) && (!prefix_ambig))
@@ -1408,11 +1843,14 @@ ParseExtendedArg(
 	    *pbop_found->bool_popt = !pbop_found->bool_default;
 	else
 	    *pbop_found->bool_popt = pbop_found->bool_default;
+	if (debug>2)
+	    fprintf(stderr,"Set boolean variable '%s' to '%s'\n",
+		    argtext, BOOL2STR(*pbop_found->bool_popt));
 	return;
     }
 
     /* ... else ambiguous prefix */
-    fprintf(stderr,"Extended arg '%s' is ambiguous, it matches:\n", arg);
+    fprintf(stderr,"Extended boolean arg '%s' is ambiguous, it matches:\n", arg);
     for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
 	struct ext_bool_op *pbop = &extended_bools[i];
 	if (strncmp(argtext,pbop->bool_optname,arglen) == 0)
@@ -1425,6 +1863,186 @@ ParseExtendedArg(
     BadArg(argsource, "Ambiguous extended argument '%s'\n", arg);
     
     return;
+}
+
+
+
+/* these extended variable options are table driven, to make it easier to add more
+   later without messing them up */
+/* note: the format is of the form   --output_dir=string   */
+/* note2: if the string was quoted as --output_dir="this directory"
+   then those quotes were removed by the shell */
+static void
+ParseExtendedVar(
+    char *argsource,
+    char *arg_in)
+{
+    int i;
+    struct ext_var_op *pvop_found = NULL;
+    struct ext_var_op *pvop_prefix = NULL;
+    Bool prefix_ambig = FALSE;
+    char *pequals;
+    char *argname;		/* the variable name itself */
+    char *argval;		/* the part just beyond the equal sign */
+    int arglen;
+    char *arg;
+
+    /* we're going to modify the argument to split it in half, we we'd
+       better make a copy first */
+    /* note that the only way out of this routine is through BadArg(),
+       which just exits, or the single return() below, so this isn't
+       a memory leak*/
+    arg = strdup(arg_in);
+
+    /* there must be at least SOME text there */
+    if ((strcmp(arg,"--") == 0))
+	BadArg(argsource, "Void extended variable argument\n");
+
+    /* find the '=' sign, it MUST be there */
+    /* (can't really happen, because the '=' forced us to this routine */
+    pequals=strchr(arg,'=');
+    if (!pequals)
+	BadArg(argsource, "Extended variable argument with no assignment \n");
+
+
+    /* break the arg in half at the '=' sign (located above) */
+    argname = arg+2;
+    argval = pequals+1;
+    *pequals = '\00';		/* split the string here */
+    /* --output_dir=test */
+    /*   ^ argname = 1002 */
+    /*              ^ argval = 1013 */
+    /*  therefore length = argval(1013)-argname(1002)-1 (10) */
+    arglen = argval - argname - 1;
+
+    /* search for a match in the extended variable table */
+    for (i=0; i < NUM_EXTENDED_VARS; ++i) {
+	struct ext_var_op *pvop = &extended_vars[i];
+
+	/* check for an exact match */
+	if (strcmp(argname,pvop->var_optname) == 0) {
+	    pvop_found = pvop;
+	    break;
+	}
+
+	/* check for a prefix match */
+	if (strncmp(argname,pvop->var_optname,arglen) == 0) {
+	    if (pvop_prefix == NULL)
+		pvop_prefix = pvop;
+	    else
+		prefix_ambig = TRUE; /* already found one */
+	}
+    }
+
+
+    /* if we never found a match, it's an error */
+    if ((pvop_found == NULL) && (pvop_prefix == NULL))
+	BadArg(argsource, "Unknown extended variable argument '%s' (see -hargs)\n", arg);
+
+
+    /* if the prefix is UNambiguous, that's good enough */
+    if ((pvop_prefix != NULL) && (!prefix_ambig)) 
+	pvop_found = pvop_prefix;
+
+    /* either exact match or good prefix, do it */
+    if (pvop_found != NULL) {
+	*pvop_found->var_popt = strdup(argval);
+	if (debug>2)
+	    fprintf(stderr,"Set extended variable '%s' to '%s'\n",
+		    argname, *pvop_found->var_popt);
+	if (pvop_found->var_verify) {
+	    /* call the verification routine */
+	    if (debug>2)
+		fprintf(stderr,"verifying extended variable '%s'\n", argname);
+	    (*pvop_found->var_verify)(argname,*pvop_found->var_popt);
+	}
+	free(arg);
+	return;
+    }
+
+    /* ... else ambiguous prefix */
+    fprintf(stderr,"Extended variable arg '%s' is ambiguous, it matches:\n", arg);
+    for (i=0; i < NUM_EXTENDED_VARS; ++i) {
+	struct ext_var_op *pvop = &extended_vars[i];
+	if (strncmp(argname,pvop->var_optname,arglen) == 0)
+	    fprintf(stderr,"  %s - %s\n",
+		    pvop->var_optname, pvop->var_descr);
+    }
+    BadArg(argsource, "Ambiguous extended variable argument '%s'\n", arg);
+    /* never returns */
+}
+
+
+
+static u_long
+VerifyPositive(
+    char *varname,
+    char *value)
+{
+    int i, ivalue = 0;
+
+    for (i = 0; i < strlen(value); i++) {
+        if (!isdigit((int)value[i])) {
+	    fprintf(stderr, 
+		    "Value '%s' is not valid for variable '%s'\n", 
+		    value, varname);
+	    exit(1);
+	}
+    }
+    ivalue = atoi(value);
+    if (ivalue <= 0) {
+	fprintf(stderr,
+		"Value '%s' is not valid for variable '%s'\n", 
+		value, varname);
+	exit(1);
+    }
+
+    return (u_long)ivalue;
+}
+
+
+static void
+VerifyUpdateInt(
+    char *varname,
+    char *value)
+{
+    update_interval = VerifyPositive(varname, value);
+}
+
+
+static void 
+VerifyMaxConnNum(
+    char *varname, 
+    char *value)
+{
+    max_conn_num = VerifyPositive(varname, value);
+    conn_num_threshold = TRUE;
+}
+
+
+static void 
+VerifyLiveConnInt(
+    char *varname, 
+    char *value)
+{
+    remove_live_conn_interval = VerifyPositive(varname, value);
+}
+
+static void
+  VerifyNonrealLiveConnInt(
+		        char *varname,
+		        char *value)
+{
+   nonreal_live_conn_interval = VerifyPositive(varname, value);
+}
+
+
+static void 
+VerifyClosedConnInt(
+    char *varname, 
+    char *value)
+{
+    remove_closed_conn_interval = VerifyPositive(varname, value);  
 }
 
 
@@ -1444,9 +2062,19 @@ ParseArgs(
 	if (argv[i] == NULL)
 	    continue;
 
+	// Arguments beginning with "--" could be an extended option
+	// as in --iUDP2 , --iTCP3-5, --oUDP5-9,19 etc
+	// or they could be the regular extended variables or booleans.
 	if (strncmp(argv[i],"--",2) == 0) {
-	    ParseExtendedArg(argsource, argv[i]);
-	    continue;
+	     if (ParseExtendedOpt(argsource,argv[i])) 
+		  continue;
+	     else {
+		  if (strchr(argv[i],'=') != NULL)
+		       ParseExtendedVar(argsource, argv[i]);
+		  else
+		       ParseExtendedBool(argsource, argv[i]);
+		  continue;
+	     }
 	}
 
 	if (*argv[i] == '-') {
@@ -1486,11 +2114,15 @@ ParseArgs(
 		    graph_tput = TRUE;
 		    graph_tsg = TRUE;
 		    graph_rtt = TRUE;
-		    graph_cwin = TRUE;
+		    graph_owin = TRUE;
 		    graph_segsize = TRUE;
+		    graph_tline = TRUE;
+		    break;
+		  case 'L': graph_tline = TRUE;
+		    fprintf(stderr, "\nWarning: You have chosen the option '-L' to plot Time Line Graphs.\n         This option is yet under development and may not reflect accurate results.\n         Please take a look at the file README.tline_graphs for more details.\n\n");
 		    break;
 		  case 'M': colorplot = FALSE; break;
-		  case 'N': graph_cwin = TRUE; break;
+		  case 'N': graph_owin = TRUE; break;
 		  case 'O':
 		    if (*(argv[i]+1)) {
 			/* -Ofile */
@@ -1505,7 +2137,7 @@ ParseArgs(
 		  case 'R': graph_rtt = TRUE; break;
 		  case 'S': graph_tsg = TRUE; break;
 		  case 'T': graph_tput = TRUE; break;
-		  case 'W': print_cwin = TRUE; break;
+		  case 'W': print_owin = TRUE; break;
 		  case 'X': hex = TRUE; break;
 		  case 'Z': dump_rtt = TRUE; break;
 		  case 'b': printbrief = TRUE; break;
@@ -1524,18 +2156,26 @@ ParseArgs(
 		    }
 		    break;
 		  case 'h': Help(argv[i]+1); *(argv[i]+1) = '\00'; break;
-		  case 'i': {
+		  case 'i': Ignore(argsource,argv[i]+1);
+/*			      {
 		      int conn = -1;
-		      if (isdigit((int)(*(argv[i]+1))))
-			  conn = atoi(argv[i]+1);
+		      if (run_continuously) {
+			fprintf(stderr, "Warning: cannot ignore connections in continuous mode\n");
+		      }
 		      else
-			  BadArg(argsource, "-i  number missing\n");
-		      if (conn < 0)
-			  BadArg(argsource, "-i  must be >= 0\n");
-		      ++saw_i_or_o;
-		      IgnoreConn(conn);
-		      *(argv[i]+1) = '\00'; 
-		  } break;
+			   
+		      else {
+			  if (isdigit((int)(*(argv[i]+1))))
+			      conn = atoi(argv[i]+1);
+			  else
+			      BadArg(argsource, "-i  number missing\n");
+		          if (conn < 0)
+			      BadArg(argsource, "-i  must be >= 0\n");
+ 		          ++saw_i_or_o;
+		          gIgnoreConn(conn);
+		      }
+ }*/		      *(argv[i]+1) = '\00'; 
+		     break;
 		  case 'l': printbrief = FALSE; break;
 		  case 'm':
 		    BadArg(argsource,
@@ -1546,8 +2186,13 @@ ParseArgs(
 		    resolve_ports = FALSE;
 		    break;
 		  case 'o':
-		    ++saw_i_or_o;
-		    GrabOnly(argsource,argv[i]+1);
+		    if (run_continuously) {
+		        fprintf(stderr, "Warning: cannot use 'grab only' flag in continuous mode\n");
+		    }
+		    else {
+		        ++saw_i_or_o;
+		        GrabOnly(argsource,argv[i]+1);
+		    }
 		    *(argv[i]+1) = '\00'; break;
 		  case 'p': printallofem = TRUE; break;
 		  case 'q': printsuppress = TRUE; break;
@@ -1601,13 +2246,14 @@ ParseArgs(
 		  case 'C': colorplot = !TRUE; break;
 		  case 'D': hex = !FALSE; break;
 		  case 'F': graph_segsize = !TRUE; break;
+		  case 'L': graph_tline = !TRUE; break;
 		  case 'M': colorplot = !FALSE; break;
-		  case 'N': graph_cwin = !TRUE; break;
+		  case 'N': graph_owin = !TRUE; break;
 		  case 'P': printem = !TRUE; break;
 		  case 'R': graph_rtt = !TRUE; break;
 		  case 'S': graph_tsg = !TRUE; break;
 		  case 'T': graph_tput = !TRUE; break;
-		  case 'W': print_cwin = !TRUE; break;
+		  case 'W': print_owin = !TRUE; break;
 		  case 'X': hex = !TRUE; break;
 		  case 'Z': dump_rtt = !TRUE; break;
 		  case 'b': printbrief = !TRUE; break;
@@ -1672,9 +2318,12 @@ DumpFlags(void)
     fprintf(stderr,"printbrief:       %s\n", BOOL2STR(printbrief));
     fprintf(stderr,"printsuppress:    %s\n", BOOL2STR(printsuppress));
     fprintf(stderr,"print_rtt:        %s\n", BOOL2STR(print_rtt));
-    fprintf(stderr,"graph tsg:        %s\n", BOOL2STR(graph_tsg));
     fprintf(stderr,"graph rtt:        %s\n", BOOL2STR(graph_rtt));
     fprintf(stderr,"graph tput:       %s\n", BOOL2STR(graph_tput));
+    fprintf(stderr,"graph tsg:        %s\n", BOOL2STR(graph_tsg));
+    fprintf(stderr,"graph segsize:    %s\n", BOOL2STR(graph_segsize));
+    fprintf(stderr,"graph owin:       %s\n", BOOL2STR(graph_owin));
+    fprintf(stderr,"graph tline:      %s\n", BOOL2STR(graph_tline));
     fprintf(stderr,"plotem:           %s\n",
 	    colorplot?"(color)":"(b/w)");
     fprintf(stderr,"hex printing:     %s\n", BOOL2STR(hex));
@@ -1689,15 +2338,25 @@ DumpFlags(void)
     fprintf(stderr,"beginning pnum:   %lu\n", beginpnum);
     fprintf(stderr,"ending pnum:      %lu\n", endpnum);
     fprintf(stderr,"throughput intvl: %d\n", thru_interval);
-    fprintf(stderr,"number modules:   %d\n", NUM_MODULES);
+    fprintf(stderr,"NS simulator hdrs:%s\n", BOOL2STR(ns_hdrs));
+    fprintf(stderr,"number modules:   %u\n", (unsigned)NUM_MODULES);
     fprintf(stderr,"debug:            %s\n", BOOL2STR(debug));
-
-    /* print out the stuff controlled by the extended args */
+	
+    /* print out the stuff controlled by the extended boolean args */
     for (i=0; i < NUM_EXTENDED_BOOLS; ++i) {
 	struct ext_bool_op *pbop = &extended_bools[i];
 	char buf[100];
-	sprintf(buf,"%s:", pbop->bool_optname);
+	snprintf(buf,sizeof(buf),"%s:", pbop->bool_optname);
 	fprintf(stderr,"%-18s%s\n", buf, BOOL2STR(*pbop->bool_popt));
+    }
+
+    /* print out the stuff controlled by the extended variable args */
+    for (i=0; i < NUM_EXTENDED_VARS; ++i) {
+	struct ext_var_op *bvop = &extended_vars[i];
+	char buf[100];
+	snprintf(buf,sizeof(buf),"%s:", bvop->var_optname);
+	fprintf(stderr,"%-18s%s\n", buf,
+		(*bvop->var_popt)?*bvop->var_popt:"<NULL>");
     }
 }
 
@@ -1782,6 +2441,29 @@ ModulesPerConn(
 	    /* remember this structure */
 	    ptp->pmod_info[i] = pmodstruct;
 	}
+    }
+}
+
+
+void
+ModulesPerOldConn(
+		  tcp_pair *ptp)
+{
+    int i;
+
+    for (i=0; i < NUM_MODULES; ++i) {
+	if (!modules[i].module_inuse)
+	    continue;  /* might be disabled */
+
+	if (modules[i].module_deleteconn == NULL)
+	    continue;  /* they might not care */
+
+	if (debug>3)
+	    fprintf(stderr,"Calling delete conn routine for module \"%s\"\n",
+		    modules[i].module_name);
+
+	(*modules[i].module_deleteconn)(ptp,
+					ptp->pmod_info?ptp->pmod_info[i]:NULL);
     }
 }
 
@@ -1974,5 +2656,117 @@ FileToBuf(
 
     /* somebody else will "free" it */
     return(buffer);
+}
+
+
+/* ExpandFormat:
+   Expand the string in "format" and return the result string
+
+   The return value rotates between one of two static strings
+   (to avoid malloc overhead), but if you need more than two at
+   a time, you'll need to make a copy.
+
+   Expansions are performed as follows:
+
+   %f	basename of the current input file
+   %d	execution date, standard unix output, spaces ==> underscores
+   %t	execution time & date, standard unix output, spaces ==> underscores
+   %D	execution date, format "1-14-1963"
+*/
+
+char *
+ExpandFormat(const char *format)
+{
+    static struct dstring *pds1 = NULL;
+    static struct dstring *pds2 = NULL;
+    static struct dstring *pds = NULL;
+
+    /* init the strings */
+    if (pds1 == NULL) {
+	pds1 = DSNew();
+	pds2 = DSNew();
+    }
+
+    /* alternate between them */
+    pds = (pds == pds1)?pds2:pds1;
+
+    /* erase the previous contents */
+    DSErase(pds);
+
+    if (debug>2)
+	fprintf(stderr,"Trying to expand string '%s'\n", format);
+
+    while (*format) {
+	if (strncmp(format,"%f",2) == 0) {
+	    /* basename of current file (after the last slash) */
+	    char *filename = cur_filename;
+	    char *ptr;
+
+	    /* find the last '/' in the file */
+	    ptr = strrchr(filename,'/');
+
+	    if (ptr)
+		++ptr;		/* the base of the filename is one past the slash */
+	    else
+		ptr = filename;	/* no directory, just use the file */
+		
+	    DSAppendString(pds,ptr);
+	    format += 2;
+	} else if (strncmp(format,"%D",2) == 0) {
+	    /* current wallclock date (1-14-1963) */
+	    time_t now;
+	    struct tm *ptm;
+	    char buf[32];
+
+	    /* get the current time, broken apart */
+	    time(&now);
+	    ptm = localtime((time_t *)&wallclock_start.tv_sec);
+
+	    snprintf(buf,sizeof(buf),"%d-%d-%d",
+		    ptm->tm_mon+1,
+		    ptm->tm_mday,
+		    1900 + ptm->tm_year);
+	    DSAppendString(pds,buf);
+	    format += 2;
+	} else if ((strncmp(format,"%d",2) == 0) ||
+		   (strncmp(format,"%t",2) == 0)) {
+	    /* current wallclock date, unix format */
+	    time_t now;
+	    char *pbuf;
+	    char *pch;
+
+	    /* get the current time in unix format */
+            /* Fri Sep 13 00:00:00 1986\n\0 */
+	    /*           1         2       */
+	    /* 0123456789012345678901234 5 */
+	    time(&now);
+	    pbuf = ctime(&now);
+	    pbuf[24] = '\00';	/* nuke the newline */
+
+	    /* spaces to underscores */
+	    for (pch = pbuf; *pch; ++pch)
+		if (*pch == ' ')
+		    *pch = '_';
+
+
+	    if (strncmp(format,"%d",2) == 0)
+		/* the whole thing */
+		DSAppendString(pds,pbuf);
+	    else {
+		/* just the date */
+		pbuf[11] = '\00';
+		DSAppendString(pds,pbuf);
+		DSAppendString(pds,pbuf+20);
+	    }
+
+	    format += 2;
+	} else {
+	    /* no formatting, just copy one character */
+	    DSAppendChar(pds,*format);
+	    ++format;
+	}
+    }
+
+    return(DSVal(pds));
 }
 

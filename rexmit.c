@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/rexmit.c,v 5.4 1999/03/16 21:43:06 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/rexmit.c,v 5.10 2001/08/30 21:56:26 mramadas Exp $";
 
 
 /* 
@@ -63,10 +89,9 @@ static void collapse_quad(quadrant *);
 static segment *create_seg(seqnum, seglen);
 static quadrant *whichquad(seqspace *, seqnum);
 static quadrant *create_quadrant(void);
-static int addseg(tcb *, quadrant *, seglen, seqnum, Bool *);
+static int addseg(tcb *, quadrant *, seqnum, seglen, Bool *);
 static void rtt_retrans(tcb *, segment *);
 static enum t_ack rtt_ackin(tcb *, segment *, Bool rexmit);
-static void freequad(quadrant **);
 static void dump_rtt_sample(tcb *, segment *, double);
 static void graph_rtt_sample(tcb *, segment *, unsigned long);
 
@@ -159,7 +184,7 @@ addseg(
 	    insert_seg_between(pquad,pseg_new,pseg->prev,pseg);
 
 	    /* see if we overlap the next segment in the list */
-	    if (thisseg_lastbyte <= pseg->seq_firstbyte) {
+	    if (thisseg_lastbyte < pseg->seq_firstbyte) {
 		/* we don't overlap, so we're done */
 		return(rexlen);
 	    } else {
@@ -392,6 +417,8 @@ rtt_ackin(
     double etime_rtt;
     enum t_ack ret;
 
+	u_long current_size=0;
+
     /* how long did it take */
     etime_rtt = elapsed(pseg->time,current_time);
 
@@ -406,6 +433,7 @@ rtt_ackin(
 	ret = NOSAMP;
     } else if (pseg->retrans == 0) {
 	ptcb->rtt_last = etime_rtt;
+
 	if ((ptcb->rtt_min == 0) || (ptcb->rtt_min > etime_rtt))
 	    ptcb->rtt_min = etime_rtt;
 
@@ -415,6 +443,42 @@ rtt_ackin(
 	ptcb->rtt_sum += etime_rtt;
 	ptcb->rtt_sum2 += etime_rtt * etime_rtt;
 	++ptcb->rtt_count;
+
+	/* Collecting stats for full size segments */
+	/* Calculate the current_size of the segment,
+	   taking care of possible sequence space wrap around */
+
+	if ( pseg->seq_lastbyte > pseg->seq_firstbyte )
+	  current_size = pseg->seq_lastbyte - pseg->seq_firstbyte + 1;
+	else
+	   /* MAX_32 is 0x1,0000,0000
+	   So we don't need the "+ 1" while calculating the size here */
+	  current_size = (MAX_32 - pseg->seq_firstbyte)+pseg->seq_lastbyte;
+
+	if ( !ptcb->rtt_full_size || (ptcb->rtt_full_size < current_size) )
+	{
+		/* Found a bigger segment.. Reset all stats. */
+		ptcb->rtt_full_size=current_size;
+
+		ptcb->rtt_full_min=etime_rtt;
+		ptcb->rtt_full_max=etime_rtt;
+		ptcb->rtt_full_sum=etime_rtt;
+		ptcb->rtt_full_sum2=(etime_rtt * etime_rtt);
+		ptcb->rtt_full_count=1;
+	}
+	else if (ptcb->rtt_full_size == current_size)
+	{
+		++ptcb->rtt_full_count;
+
+		if ((ptcb->rtt_full_min==0) || (ptcb->rtt_full_min>etime_rtt) )
+			ptcb->rtt_full_min = etime_rtt;
+
+		if (ptcb->rtt_full_max < etime_rtt)
+			ptcb->rtt_full_max = etime_rtt;
+
+		ptcb->rtt_full_sum += etime_rtt;
+		ptcb->rtt_full_sum2 += (etime_rtt * etime_rtt);
+	}
 	ret = NORMAL;
     } else {
 	/* retrans, can't use it */
@@ -564,7 +628,7 @@ ack_in(
 }
 
 
-static void
+void
 freequad(
     quadrant **ppquad)
 {
@@ -601,7 +665,7 @@ dump_rtt_sample(
 	MFILE *f;
 	static char filename[15];
 
-	sprintf(filename,"%s2%s%s",
+	snprintf(filename,sizeof(filename),"%s2%s%s",
 		ptcb->host_letter, ptcb->ptwin->host_letter,
 		RTT_DUMP_FILE_EXTENSION);
 
@@ -642,7 +706,7 @@ graph_rtt_sample(
 	    name_from = ptcb->ptp->b_endpoint;
 	    name_to   = ptcb->ptp->a_endpoint;
 	}
-	sprintf(title,"%s_==>_%s (rtt samples)", name_from, name_to);
+	snprintf(title,sizeof(title),"%s_==>_%s (rtt samples)", name_from, name_to);
 	ptcb->rtt_plotter = new_plotter(ptcb,NULL,title,
 					"time","rtt (ms)",
 					RTT_GRAPH_FILE_EXTENSION);

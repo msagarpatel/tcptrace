@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/mfiles.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/mfiles.c,v 5.8 2001/08/01 20:47:59 mramadas Exp $";
 
 
 /* 
@@ -60,6 +86,7 @@ static void Mfopen_internal(MFILE *pmf, char *mode);
 static void Mf_totail(MFILE *pmf, MFILE *ptail);
 static void Mf_unlink(MFILE *pmf);
 static void M_closeold(void);
+static void M_mkdirp(char *directory);
 
 
 /* head and tail of LRU open file list */
@@ -93,16 +120,51 @@ Mfopen(
     char *mode)
 {
     MFILE *pmf;
+    char *directory;
+    char *prefix;
+	int len;
 
-    if (strcmp(mode,"w") != 0) {
-	fprintf(stderr,"Sorry, Mfopen works only for mode \"w\"\n");
+    if ((strcmp(mode,"w") != 0) && (strcmp(mode,"a") != 0)){
+	fprintf(stderr,"Sorry, Mfopen works only for mode \"w\" or \"a\"\n");
 	exit(-1);
     }
 
     pmf = (MFILE *) MallocZ(sizeof(MFILE));
 
-    pmf->fname = strdup(fname);
-    Mfopen_internal(pmf,"w+");
+    /* use the directory specified by the user, if requested */
+    if (output_file_dir == NULL)
+	directory = "";
+    else {
+	directory = ExpandFormat(output_file_dir);
+	M_mkdirp(directory);
+    }
+
+    /* attach a filename prefix, if the user asked for one */
+    if (output_file_prefix == NULL)
+	prefix = "";
+    else
+	prefix = ExpandFormat(output_file_prefix);
+
+
+	len=strlen(fname)+strlen(directory)+strlen(prefix)+2;
+			/* 2: for the slash and null */
+
+    pmf->fname = MallocZ(len);
+
+    snprintf(pmf->fname,len,"%s%s%s%s",
+	    directory,
+	    (*directory)?"/":"",
+	    prefix,
+	    fname);
+
+    if (strcmp(mode,"w") == 0)
+	Mfopen_internal(pmf,"w+");
+    else if (strcmp(mode,"a") == 0)
+	Mfopen_internal(pmf,"a+");
+    else {
+	fprintf(stderr,"Mfopen: internal file mode inconsistancy\n");
+	exit(10);
+    }
 
     /* put at the tail of the LRU list */
     Mf_totail(pmf,&mf_tail);
@@ -207,7 +269,7 @@ Mfseek(
 
 int
 Mfwrite(
-    char *buf,
+    void *buf,
     u_long size,
     u_long nitems,
     MFILE *pmf)
@@ -255,7 +317,7 @@ Mfopen_internal(
     if (stream == NULL) {
 
 	if (errno != EMFILE) {
-	    perror("fopen");
+	    perror(pmf->fname);
 	    exit(-1);
 	}
 
@@ -358,4 +420,65 @@ Mf_totail(
     pmf->prev = ptail->prev;
     ptail->prev->next = pmf;
     ptail->prev = pmf;
+}
+
+
+/* try to create all of the directories in the argument */
+/* like mkdirp() under Solaris, but that apparently isn't standard */
+static void
+M_mkdirp(char *directory)
+{
+    static dstring_t *pds = NULL;
+    char *pch;
+    char *temp;
+
+    if (access(directory,W_OK) == 0) {
+	/* it already exists */
+	return;
+    }
+
+    /* make a dynamic string to store the path components */
+    if (pds == NULL)
+	pds = DSNew();
+
+    if (debug)
+	fprintf(stderr,"Trying to create directory '%s'\n", directory);
+    
+
+    /* walk the directory and try to create the components */
+    pch = directory;
+    while (pch) {
+	pch = strchr(pch,'/');
+	/* N.B. pch will be null on the last go around */
+
+	/* copy that much of the directory */
+	DSErase(pds);
+	if (pch)
+	    DSAppendStringN(pds,directory,(1 + pch - directory));
+	else
+	    DSAppendString(pds,directory); /* last loop */
+	temp = DSVal(pds);
+
+	/* try to create it */
+	if (mkdir(temp,0755) == -1) {
+	    /* this will fail with EEXIST if the directory exists,
+	       which is fine */
+	    if (errno != EEXIST) {
+		/* couldn't make the directory */
+		perror(temp);
+		fprintf(stderr,
+			"Unable to create directory '%s' (as part of '%s')\n",
+			temp, directory);
+		exit(-1);
+	    }
+	} else {
+	    if (debug)
+		fprintf(stderr,"Created directory '%s'\n", temp);
+	}
+
+	/* if pch is NULL, then we're done and will fall out,
+	   else we need to increment pch past the current '/' */
+	if (pch)
+	    ++pch;
+    }
 }

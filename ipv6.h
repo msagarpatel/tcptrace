@@ -1,32 +1,58 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const rcsid_ipv6[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/ipv6.h,v 5.6 1999/09/07 21:38:06 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.h,v 5.10 2002/06/21 09:56:26 alakhian Exp $";
 
 
 /*
@@ -69,10 +95,11 @@ static char const rcsid_ipv6[] =
 /*
  * IPv6 address data structure.
  */
+#ifndef __WIN32
 typedef struct in6_addr {
 	u_char	s6_addr[16];	/* IPv6 address */
 } in6_addr;
-
+#endif /* __WIN32 */
 
 #endif /* notdef IPPROTO_NONE */
 
@@ -82,8 +109,8 @@ typedef struct in6_addr {
  */
 struct ipv6 {
     u_int ip6_ver_tc_flabel;	/* first 4  bits = version #, 
-                                   next  4  bits = Trafic class,
-				   next  24 bits = flow label */
+                                   next  8  bits = Trafic class,
+				   next  20 bits = flow label */
     u_short	ip6_lngth;	/* Payload length */
     u_char	ip6_nheader;	/* Next Header */
     u_char	ip6_hlimit;	/* Hop Limit */
@@ -96,7 +123,7 @@ struct ipv6 {
 struct ipv6_ext {
     u_char	ip6ext_nheader;	/* Next Header */
     u_char	ip6ext_len;	/* number of bytes in this header */
-    u_char	ip6ext_data[1];	/* optional data */
+    u_char	ip6ext_data[2];	/* optional data */
 };
 
 
@@ -110,10 +137,13 @@ struct ipv6_ext_frag {
 
 
 /* tcptrace's IPv6 access routines */
-struct tcphdr *gettcp(struct ip *pip, void **pplast);
-struct udphdr *getudp(struct ip *pip, void **pplast);
+int gettcp(struct ip *pip, struct tcphdr **pptcp, void **pplast);
+int getudp(struct ip *pip, struct udphdr **ppudp, void **pplast);
+int getroutingheader(struct ip *pip, struct ipv6_ext **ppipv6_ext, void **pplast);
 int gethdrlength (struct ip *pip, void *plast);
 int getpayloadlength (struct ip *pip, void *plast);
 struct ipv6_ext *ipv6_nextheader(void *pheader0, u_char *pnextheader);
 char *ipv6_header_name(u_char nextheader);
 char *my_inet_ntop(int af, const char *src, char *dst, size_t size);
+int total_length_ext_headers(struct ipv6 *pip6);
+  

@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/etherpeek.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/etherpeek.c,v 5.7 2002/06/21 09:56:26 alakhian Exp $";
 
 
 /****************************************
@@ -45,6 +71,13 @@ static char const rcsid[] =
 
 #ifdef GROK_ETHERPEEK
 
+/* Defining SYS_STDIN which is fp for Windows and stdin for all other systems */
+#ifdef __WIN32
+static FILE *fp;
+#define SYS_STDIN fp
+#else
+#define SYS_STDIN stdin
+#endif /* __WIN32 */
 
 /* NOTE:  This is for version 5 of the file.  Other file formats may not work
  correctly.*/
@@ -55,19 +88,19 @@ static struct EPFileHeader {
 } file_header;
 
 static struct EPFileHeader2 {
-    u_long length;		/* length of file*/
-    u_long numPackets;		/* number of packets contained in the file*/
-    u_long timeDate;		/* time and date stamp of the file (MAC format)*/
-    u_long timeStart;		/* time of the first packet in the file*/
-    u_long timeStop;		/* time of the last packet in the file*/
-    u_long futureUse[7];	/*reserved for future use and irrelevent to us!*/
+    tt_uint32 length;		/* length of file*/
+    tt_uint32 numPackets;		/* number of packets contained in the file*/
+    tt_uint32 timeDate;		/* time and date stamp of the file (MAC format)*/
+    tt_uint32 timeStart;		/* time of the first packet in the file*/
+    tt_uint32 timeStop;		/* time of the last packet in the file*/
+    tt_uint32 futureUse[7];	/*reserved for future use and irrelevent to us!*/
 } file_header2;
 
 
 
 struct EPFilePacket_v5_6 {
-    u_short packetlength;	/* total packet length */
-    u_short slicelength;	/* sliced length of packet*/
+    tt_uint16 packetlength;	/* total packet length */
+    tt_uint16 slicelength;	/* sliced length of packet*/
 };
 
 struct EPFilePacket2_v5_6 {
@@ -76,24 +109,24 @@ struct EPFilePacket2_v5_6 {
 };
 
 struct EPFilePacket3_v5_6 { 
-    u_long  timestamp;		/* timestamp in milliseconds*/
-    short destNum;		/* str corresponding to ether address*/
-    short srcNum;		/* dnum is entry in table*/
-    short protoNum;		/* table number for the protocol*/
+    tt_uint32  timestamp;		/* timestamp in milliseconds*/
+    tt_uint16 destNum;		/* str corresponding to ether address*/
+    tt_uint16 srcNum;		/* dnum is entry in table*/
+    tt_uint16 protoNum;		/* table number for the protocol*/
     char protoStr[8];		/* protocol identity string (NOT null terminated!)*/
-    u_short filterNum;		/* index to filter table*/
+    tt_uint16 filterNum;		/* index to filter table*/
 };
 
 
 /* what we need for version 7 */
 typedef struct PeekPacket_v7 {
-    u_short	protospec;	/* ProtoSpec ID. */
-    u_short	packetlength;	/* Total length of packet. */
-    u_short	slicelength;	/* Sliced length of packet. */
+    tt_uint16	protospec;	/* ProtoSpec ID. */
+    tt_uint16	packetlength;	/* Total length of packet. */
+    tt_uint16	slicelength;	/* Sliced length of packet. */
     u_char	flags;		/* CRC, frame, runt, ... */
     u_char	status;		/* Slicing, ... */
-    u_long	timestamphi;	/* 64-bit timestamp in microseconds. */
-    u_long	timestamplo;
+    tt_uint32	timestamphi;	/* 64-bit timestamp in microseconds. */
+    tt_uint32	timestamplo;
 } PeekPacket_v7;
 
 /* byte swapping */
@@ -137,9 +170,9 @@ pread_EP(
     struct ip		**ppip,
     void		**pplast)
 {
-    int packlen;
-    int rlen;
-    int len;
+    u_int packlen;
+    u_int rlen;
+    u_int len;
 
     /* read the EP packet header */
     while(1){
@@ -148,7 +181,7 @@ pread_EP(
 	    struct EPFilePacket2_v5_6 hdr2;
 	    struct EPFilePacket3_v5_6 hdr3;
 
-	    if ((rlen=fread(&hdr,1,Real_Size_FP,stdin)) != Real_Size_FP) {
+	    if ((rlen=fread(&hdr,1,Real_Size_FP,SYS_STDIN)) != Real_Size_FP) {
 		if (rlen != 0)
 		    fprintf(stderr,"Bad EP header\n");
 		return(0);
@@ -162,13 +195,13 @@ pread_EP(
 	    }
 	    
 	
-	    if ((rlen=fread(&hdr2,1,Real_Size_FP2,stdin)) !=Real_Size_FP2) {
+	    if ((rlen=fread(&hdr2,1,Real_Size_FP2,SYS_STDIN)) !=Real_Size_FP2) {
 		if (rlen != 0)
 		    fprintf(stderr,"Bad EP header\n");
 		return(0);
 	    }
 
-	    if ((rlen=fread(&hdr3,1,Real_Size_FP3,stdin)) != Real_Size_FP3) {
+	    if ((rlen=fread(&hdr3,1,Real_Size_FP3,SYS_STDIN)) != Real_Size_FP3) {
 		if (rlen != 0)
 		    fprintf(stderr,"Bad EP header\n");
 		return(0);
@@ -194,7 +227,7 @@ pread_EP(
 	} else { /* version 7 */
 	    struct PeekPacket_v7 hdrv7;
 
-	    if ((rlen=fread(&hdrv7,sizeof(hdrv7),1,stdin)) != 1) {
+	    if ((rlen=fread(&hdrv7,sizeof(hdrv7),1,SYS_STDIN)) != 1) {
 		if (rlen != 0)
 		    fprintf(stderr,"Bad EP V7 header (rlen is %d)\n", rlen);
 		return(0);
@@ -220,11 +253,6 @@ pread_EP(
 
 		ptime->tv_sec  = usecs / 1000000 - Mac2unix;
 		ptime->tv_usec = usecs % 1000000;
-
-		if (0)
-		    printf("hi: %lu  lo: %lu usecs: %lld  tv_sec: %lu  tv_usec: %06lu\n",
-			   (u_long)hdrv7.timestamphi, (u_long)hdrv7.timestamplo,
-			   usecs, ptime->tv_sec, ptime->tv_usec);
 	    }
 #else /* HAVE_LONG_LONG */
 	    {
@@ -241,11 +269,6 @@ pread_EP(
 
 		/* usecs is easier, the part we want is all in the lower word */
 		ptime->tv_usec = usecs - (double)ptime->tv_sec * 1000000.0;
-
-		if (0)
-		    printf("hi: %lu  lo: %lu usecs: %f  tv_sec: %lu  tv_usec: %06lu\n",
-			   (u_long)hdrv7.timestamphi, (u_long)hdrv7.timestamplo,
-			   usecs, ptime->tv_sec, ptime->tv_usec);
 	    }
 #endif /* HAVE_LONG_LONG */
 
@@ -259,7 +282,7 @@ pread_EP(
 		*ptlen = hdrv7.packetlength;
 
 	    if (debug>1) {
-		printf("File position: %ld\n", ftell(stdin));
+		printf("File position: %ld\n", ftell(SYS_STDIN));
 		printf("pread_EP (v7) next packet:\n");
 		printf("  packetlength: %d\n", hdrv7.packetlength);
 		printf("  slicelength:  %d\n", hdrv7.slicelength);
@@ -272,7 +295,7 @@ pread_EP(
 	len= packlen;
 
 	/* read the ethernet header */
-	rlen=fread(pep,1,sizeof(struct ether_header),stdin);
+	rlen=fread(pep,1,sizeof(struct ether_header),SYS_STDIN);
 	if (rlen != sizeof(struct ether_header)) {
 	    fprintf(stderr,"Couldn't read ether header\n");
 	    return(0);
@@ -291,7 +314,7 @@ pread_EP(
 		    "pread_EP: invalid next packet, IP len is %d, return EOF\n", len);
 	    return(0);
 	}
-	if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
+	if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
 	    if (rlen != 0)
 		if (debug)
 		    fprintf(stderr,
@@ -307,7 +330,7 @@ pread_EP(
 	if (EP_V7) {
 	    if (len%2 != 0) {
 		/* can't SEEK, because this might be a pipe!! */
-		(void) getchar();
+		(void) fgetc(SYS_STDIN);
 	    }
 	}
 
@@ -331,19 +354,25 @@ pread_EP(
 
 
 /* is the input file a Ether Peek format file?? */
-pread_f *is_EP(void)
+pread_f *is_EP(char *filename)
 {
     int rlen;
 
+#ifdef __WIN32
+    if((fp = fopen(filename, "r")) == NULL) {
+       perror(filename);
+       exit(-1);
+    }
+#endif /* __WIN32 */   
 
     /* read the EP file header */
-    if ((rlen=fread(&file_header,1,Real_Size_FH,stdin)) != Real_Size_FH) {
-	rewind(stdin);
+    if ((rlen=fread(&file_header,1,Real_Size_FH,SYS_STDIN)) != Real_Size_FH) {
+	rewind(SYS_STDIN);
 	return(NULL);
     }
-    /*rewind(stdin);  I might need this*/
-    if ((rlen=fread(&file_header2,1,Real_Size_FH2,stdin)) != Real_Size_FH2) {
-	rewind(stdin);
+    /*rewind(SYS_STDIN);  I might need this*/
+    if ((rlen=fread(&file_header2,1,Real_Size_FH2,SYS_STDIN)) != Real_Size_FH2) {
+	rewind(SYS_STDIN);
 	return(NULL);
     }
 
@@ -359,18 +388,18 @@ pread_f *is_EP(void)
     if (debug>1) {
 	int i;
       
-	printf("IS_EP says version number %d \n",file_header.version);
-	printf("IS_EP says status number %d\n",file_header.status);
-	printf("IS_EP says length number %ld\n",file_header2.length);
-	printf("IS_EP says num packets number %ld \n",file_header2.numPackets);
-	printf("IS_EP says time date in mac format %lu \n", (u_long)file_header2.timeDate);
-	printf("IS_EP says time start  %lu \n",file_header2.timeStart);
-	printf("IS_EP says time stop %lu \n",file_header2.timeStop);
-	printf("future is: ");
+	fprintf(stderr, "IS_EP says version number %d \n",file_header.version);
+	fprintf(stderr, "IS_EP says status number %d\n",file_header.status);
+	fprintf(stderr, "IS_EP says length number %ld\n",file_header2.length);
+	fprintf(stderr, "IS_EP says num packets number %ld \n",file_header2.numPackets);
+	fprintf(stderr, "IS_EP says time date in mac format %lu \n", (tt_uint32)file_header2.timeDate);
+	fprintf(stderr, "IS_EP says time start  %lu \n",file_header2.timeStart);
+	fprintf(stderr, "IS_EP says time stop %lu \n",file_header2.timeStop);
+	fprintf(stderr, "future is: ");
 	for(i=0;i<7;i++)
-	    printf(" %ld ",file_header2.futureUse[i]);
-	printf("\n");
-	printf("RLEN is %d \n",rlen);
+	    fprintf(stderr, " %ld ",file_header2.futureUse[i]);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "RLEN is %d \n",rlen);
     }
 
 
@@ -382,7 +411,7 @@ pread_f *is_EP(void)
 	(file_header.status == 0) &&
 	(memcmp(file_header2.futureUse,"\000\000\000\000\000\000\000",7) == 0)) {
 	if (debug)
-	    printf("Valid Etherpeek format file (file version: %d)\n",
+	    fprintf(stderr, "Valid Etherpeek format file (file version: %d)\n",
 		   file_header.version);
 	thisfile_ep_version = file_header.version;
 

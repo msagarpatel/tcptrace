@@ -1,33 +1,59 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Original Author: Eric Helvey
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ehelvey@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  * Extensively Modified:    Shawn Ostermann
  */
 static char const rcsid[] =
-   "$Header: /home/sdo/src/tcptrace/src/RCS/mod_tcplib.c,v 5.23 1999/08/30 14:30:47 sdo Exp $";
+   "$Header: /usr/local/cvs/tcptrace/mod_tcplib.c,v 5.31 2001/08/01 20:47:59 mramadas Exp $";
 
 #ifdef LOAD_MODULE_TCPLIB
 
@@ -70,6 +96,32 @@ struct insidenode {
 
 
 
+/* for the parallelism hack */
+#define BURST_KEY_MAGIC 0x49524720 /* 'I' 'R' 'G' '<space>' */
+struct burstkey {
+    unsigned long magic;	/* MUST be BURST_KEY_MAGIC */
+    unsigned long nbytes;	/* bytes in burst (INCLUDING this struct) */
+    unsigned char key;		/* one character key to return */
+    unsigned char unused[3];	/* (explicit padding) */
+    unsigned long groupnum;	/* for keeping track of parallel HTTP */
+};
+
+
+
+#ifdef BROKEN
+char *BREAKDOWN_APPS_NAMES[] = {
+    "app 1",
+    "app 2",
+    "app 3",
+    "app 4",
+    "app 5",
+    "app 6",
+    "app 7",
+    "app 8"
+};
+#endif /* BROKEN */
+
+
 /* for VM efficiency, we pull the info that we want out of the tcptrace
    structures into THIS structure (or large files thrash) */
 typedef struct module_conninfo_tcb {
@@ -101,7 +153,8 @@ typedef struct module_conninfo_tcb {
     tcb 	*ptcb;
 
     /* previous connection of same type */
-    struct module_conninfo *prev_dtype;
+    struct module_conninfo *prev_dtype_all;/* for ALL app types */
+    struct module_conninfo *prev_dtype_byapp; /* just for THIS app type */
 } module_conninfo_tcb;
 
 
@@ -135,9 +188,16 @@ typedef struct module_conninfo {
     /* for parallel http sessions */
     struct parallelism *pparallelism;
 
+    /* unidirectional conns ignored totally */
+    Bool unidirectional_http;
+
     /* for determining bursts */
     tcb *tcb_lastdata;
 
+    /* to determine parallelism in conns, trafgen encodes a group
+       number in the data */
+    u_long http_groupnum;
+    
     /* next connection in linked list by endpoint pairs */
     struct module_conninfo *next_pair;
 } module_conninfo;
@@ -185,7 +245,10 @@ static struct tcplibstats {
     dyn_counter telnet_interarrival;
 
     /* conversation interarrival times */
-    dyn_counter conv_interarrival;
+    dyn_counter conv_interarrival_all;
+
+    /* protocol-specific interarrival times */
+    dyn_counter conv_interarrival_byapp[NUM_APPS];
 
     /* conversation duration */
     dyn_counter conv_duration;
@@ -196,7 +259,7 @@ static struct tcplibstats {
     int tcplib_breakdown_interval[NUM_APPS];
 
     /* histogram files */
-    FILE *hist_file;
+    MFILE *hist_file;
 
     /* for NNTP, we track: */
     /* # items per connection */
@@ -230,10 +293,8 @@ static struct tcplibstats {
 /* local debugging flag */
 static int ldebug = 0;
 
-/* window hack for our TRAFGEN files */
-static Bool trafgen_data_hack = FALSE;
-static int trafgen_data_hack_excluded = 0;
-static int trafgen_data_hack_included = 0;
+/* parallelism for our TRAFGEN files */
+static Bool trafgen_generated = FALSE;
 
 /* offset for all ports */
 static int ipport_offset = 0;
@@ -260,11 +321,22 @@ typedef Bool (*f_testinside) (module_conninfo *pmc,
 			      module_conninfo_tcb *ptcbc);
 
 /* various statistics and counters */
-static u_long newconn_counter;	/* total conns */
-static u_long newconn_badport;	/* a port we don't want */
-static u_long newconn_goodport;	/* we want the port */
-static u_long newconn_ftp_data_heuristic; /* merely ASSUMED to be ftp data */
-static u_long newconn_http_parallel; /* parallel HTTP, not counted in breakdown/conv */
+static u_long debug_newconn_counter;	/* total conns */
+static u_long debug_newconn_badport;	/* a port we don't want */
+static u_long debug_newconn_goodport;	/* we want the port */
+static u_long debug_newconn_ftp_data_heuristic; /* merely ASSUMED to be ftp data */
+static u_llong debug_total_bytes; /* total "bytes" accepted */
+
+/* parallel http counters */
+static u_long debug_http_total; /* all HTTP conns */
+static u_long debug_http_parallel; /* parallel HTTP, not counted in breakdown/conv */
+static u_long debug_http_single;
+static u_long debug_http_groups;
+static u_long debug_http_slaves;
+static u_long debug_http_uni_conns; /* data in at most one direction, ignored */
+static u_llong debug_http_uni_bytes; /* data in at most one direction, ignored */
+static u_long debug_http_persistant;
+static u_long debug_http_nonpersistant;
 /* conns by type */
 static u_long conntype_counter[NUM_DIRECTION_TYPES];
 /* both flows have data */
@@ -286,7 +358,7 @@ static void do_final_breakdown(char* filename, f_testinside p_tester,
 static void do_all_final_breakdowns(void);
 static void do_all_conv_arrivals(void);
 static void do_tcplib_final_converse(char *filename,
-				     dyn_counter psizes);
+				     char *protocol, dyn_counter psizes);
 static void do_tcplib_next_converse(module_conninfo_tcb *ptcbc,
 				    module_conninfo *pmc);
 static void do_tcplib_conv_duration(char *filename,
@@ -295,7 +367,8 @@ static void do_tcplib_next_duration(module_conninfo_tcb *ptcbc,
 				    module_conninfo *pmc);
 static void tcplib_cleanup_bursts(void);
 static void tcplib_save_bursts(void);
-static Bool IsParallelHttp(module_conninfo *pmc_new);
+static Bool is_parallel_http(module_conninfo *pmc_new);
+static void tcplib_filter_http_uni(void);
 
 /* prototypes for connection-type determination */
 static Bool is_ftp_ctrl_port(portnum port);
@@ -333,7 +406,7 @@ static void tcplib_do_telnet_packetsize(char *filename,
 static void tcplib_init_setup(void);
 static void update_breakdown(tcp_pair *ptp, struct tcplibstats *pstats);
 module_conninfo *FindPrevConnection(module_conninfo *pmc,
-					   enum t_dtype dtype);
+				    enum t_dtype dtype, int app_type);
 static char *FormatBrief(tcp_pair *ptp,tcb *ptcb);
 static char *FormatAddrBrief(tcp_pair_addrblock *addr_pair);
 static void ModuleConnFillcache(void);
@@ -708,10 +781,10 @@ Must be integer value greater than 0.\n");
 	}
 
 
-	/* window hack */
+	/* parallelism hack */
 	else
 	if (argv[i] && !strncmp(argv[i], "-H", 2)) {
-	    trafgen_data_hack = TRUE;
+	    trafgen_generated = TRUE;
 	}
 
 	/* local debugging flag */
@@ -771,6 +844,10 @@ tcplib_save_bursts()
 	    if (!is_http_conn(pmc))
 		continue;
 
+	    /* ignore unidirectional */
+	    if (pmc->unidirectional_http)
+		continue;
+
 	    /* check each TCB */
 	    for (LOOP_OVER_BOTH_TCBS(dir)) {
 		module_conninfo_tcb *ptcbc = &pmc->tcb_cache[dir];
@@ -790,7 +867,6 @@ tcplib_save_bursts()
 		if (pp->counted[dtype])
 		    continue;
 
-		
 		/* count the max connections */
 		AddToCounter(&global_pstats[dtype]->http_P_maxconns,
 			     pp->maxparallel, 1, 1);
@@ -806,6 +882,12 @@ tcplib_save_bursts()
 		AddToCounter(&global_pstats[dtype]->http_P_persistant,
 			     pp->persistant[dir]?2:1,
 			     1, 1);
+
+		/* debugging */
+		if (pp->persistant[dir])
+		    ++debug_http_persistant;
+		else
+		    ++debug_http_nonpersistant;
 
 		/* don't count it again! */
 		pmc->pparallelism->counted[dtype] = TRUE;
@@ -981,6 +1063,9 @@ void tcplib_done()
     if (ldebug)
 	printf("tcplib: running http\n");
 
+    /* filter out the unidirectional HTTP (server pushes) */
+    tcplib_filter_http_uni();
+
 
     /* for efficiency, do all burst size stuff together */
     if (ldebug)
@@ -1003,9 +1088,22 @@ void tcplib_done()
 	    printf("tcplib: running conversation arrivals (%s)\n",
 		   dtype_names[i]);
 	filename = namedfile(dtype_names[i],TCPLIB_NEXT_CONVERSE_FILE);
-	do_tcplib_final_converse(filename,
-				 global_pstats[i]->conv_interarrival);
+	do_tcplib_final_converse(filename, "total",
+				 global_pstats[i]->conv_interarrival_all);
 
+#ifdef BROKEN
+	/* do the application-specific tables for Mark */
+	for (j=0; j < NUM_APPS; ++j) {
+	    char new_filename[128];
+	    char *app_name = BREAKDOWN_APPS_NAMES[j];
+	    snprintf(new_filename,sizeof(new_filename),"%s_%s", filename, app_name);
+	    
+	    do_tcplib_final_converse(new_filename, app_name,
+				     global_pstats[i]->conv_interarrival_byapp[j]);
+	}
+#endif /* BROKEN */
+
+	/* do conversation durations */
 	filename = namedfile(dtype_names[i],TCPLIB_CONV_DURATION_FILE);
 	do_tcplib_conv_duration(filename,
 				global_pstats[i]->conv_duration);
@@ -1015,15 +1113,34 @@ void tcplib_done()
     }
 
     /* print stats */
+    debug_http_single = debug_http_total - debug_http_parallel;
     printf("tcplib: total connections seen: %lu (%lu accepted, %lu bad port)\n",
-	   newconn_counter, newconn_goodport, newconn_badport);
+	   debug_newconn_counter, debug_newconn_goodport, debug_newconn_badport);
+    printf("tcplib: total bytes seen: %" FS_ULL "\n",
+	   debug_total_bytes);
     printf("tcplib: %lu random connections accepted under FTP data heuristic\n",
-	   newconn_ftp_data_heuristic);
-    printf("tcplib: %lu parallel HTTP connections seen\n",
-	   newconn_http_parallel);
-    if (trafgen_data_hack)
-	printf("tcplib: used window hack (%d excluded, %d accepted)\n",
-	       trafgen_data_hack_excluded, trafgen_data_hack_included);
+	   debug_newconn_ftp_data_heuristic);
+    printf("tcplib: %lu HTTP conns (%lu parallel, %lu single)\n",
+	   debug_http_total,
+	   debug_http_parallel,
+	   debug_http_single);
+    printf("tcplib: %lu HTTP conns (%lu single, %lu leaders, %lu slaves)\n",
+	   debug_http_total,
+	   debug_http_single,
+	   debug_http_groups,
+	   debug_http_slaves);
+    printf("tcplib: %lu groups (%lu persistant ||, %lu nonpersistant ||)\n",
+	   debug_http_groups,
+	   debug_http_persistant,
+	   debug_http_nonpersistant);
+    printf("tcplib: %lu (%.2f%%) unidir. HTTP conns (%" FS_ULL " bytes, %.2f%%) ignored\n",
+	   debug_http_uni_conns,
+	   100.0 * ((float)debug_http_uni_conns /
+		    (float)(debug_newconn_counter + debug_http_uni_conns)),
+	   debug_http_uni_bytes,
+	   100.0 * ((float)debug_http_uni_bytes /
+		    (float)(debug_total_bytes + debug_http_uni_bytes)));
+	   
     for (i=0; i < NUM_DIRECTION_TYPES; ++i) {
 	printf("  Flows of type %-8s %5lu (%lu duplex, %lu noplex, %lu unidir, %lu nodata)\n",
 	       dtype_names[i],
@@ -1032,6 +1149,46 @@ void tcplib_done()
 	       conntype_noplex_counter[i],
 	       conntype_uni_counter[i],
 	       conntype_nodata_counter[i]);
+    }
+
+    /* dump HTTP groups for debugging */
+    {
+	module_conninfo *pmc;
+	printf("Group Numbers for HTTP conns\n");
+	for (pmc = module_conninfo_tail; pmc; pmc = pmc->prev) {
+	    tcb *ptcb = pmc->tcb_cache[TCB_CACHE_A2B].ptcb;
+
+	    if (pmc->btype != TCPLIBPORT_HTTP)
+		continue;
+	    
+	    if (pmc->unidirectional_http)
+		continue;
+
+	    printf("%s: %30s\tGROUPNUM %5lu\tdata %" FS_ULL ":%" FS_ULL "\n",
+		   ts2ascii(&ptcb->ptp->first_time),
+		   FormatBrief(ptcb->ptp, ptcb),
+		   pmc->http_groupnum,
+		   pmc->tcb_cache[0].data_bytes,
+		   pmc->tcb_cache[1].data_bytes);
+	}
+
+	printf("Unidirectional HTTP conns (ignored)\n");
+	for (pmc = module_conninfo_tail; pmc; pmc = pmc->prev) {
+	    tcb *ptcb = pmc->tcb_cache[TCB_CACHE_A2B].ptcb;
+
+	    if (pmc->btype != TCPLIBPORT_HTTP)
+		continue;
+	    
+	    if (!pmc->unidirectional_http)
+		continue;
+		
+		printf("%s: %30s\tGROUPNUM %5lu\tdata %" FS_ULL ":%" FS_ULL "\n",
+		   ts2ascii(&ptcb->ptp->first_time),
+		   FormatBrief(ptcb->ptp, ptcb),
+		   pmc->http_groupnum,
+		   pmc->tcb_cache[0].data_bytes,
+		   pmc->tcb_cache[1].data_bytes);
+	}
     }
     
 
@@ -1087,13 +1244,15 @@ void tcplib_read(
 
 
     /* Setting a pointer to the beginning of the TCP header */
-    tcp = (struct tcphdr *) ((char *)pip + (4 * pip->ip_hl));
+    tcp = (struct tcphdr *) ((char *)pip + (4 * IP_HL(pip)));
 
     /* calculate the amount of user data */
     data_len = pip->ip_len -	/* size of entire IP packet (and IP header) */
-	(4 * pip->ip_hl) -	/* less the IP header */
-	(4 * tcp->th_off);	/* less the TCP header */
+	(4 * IP_HL(pip)) -	/* less the IP header */
+	(4 * TH_OFF(tcp));	/* less the TCP header */
 
+    /* stats */
+    debug_total_bytes += data_len;
 
     /* see which of the 2 TCB's this goes with */
     if (ptp->addr_pair.a_port == ntohs(tcp->th_sport)) {
@@ -1171,9 +1330,45 @@ void tcplib_read(
 	}
     }
 
+    /* if it's http and we don't already know that it's
+       parallel, and this is the first data, and we're
+       looking at trafgen data, check the group number encoded
+       in the data stream */
+    if (is_http_conn(pmc) &&
+	trafgen_generated &&
+	(ptcb->data_bytes == data_len) &&
+	data_len >= sizeof(struct burstkey)) {
+	u_char *pdata = (u_char *)tcp + TH_OFF(tcp)*4;
+	int available =  (char *)plast - (char *)pdata + 1;
+	struct burstkey *pburst;
+
+	if (0)
+	    printf("Looking for burst key (in %d bytes of data, %d bytes available)\n",
+		   data_len, available);
+
+	/* see where the burst key should be */
+	pburst = (void *) pdata;
+
+	if (pburst->magic == BURST_KEY_MAGIC) {
+	    pmc->http_groupnum = ntohl(pburst->groupnum);
+	    if (ldebug>1)
+		printf("FOUND BURST KEY in %s, group num is %lu!\n",
+		       FormatBrief(ptcb->ptp, ptcb),
+		       pmc->http_groupnum);
+
+	    /* check for parallelism */
+	    if (is_parallel_http(pmc)) {
+		pmc->ignore_conn = TRUE;
+	    }
+	}
+    }
+
+
     /* DATA Burst checking (NNTP and HTTP only) */
     if ((data_len > 0) &&
 	(is_nntp_conn(pmc) || is_http_conn(pmc))) {
+
+
 	/* see if it's a new burst */
 	if (IsNewBurst(pmc, ptcb, ptcbc, tcp)) {
 	    int etime;
@@ -1182,6 +1377,7 @@ void tcplib_read(
 		printf("New burst starts at time %s for %s\n",
 		       ts2ascii(&current_time),
 		       FormatBrief(pmc->ptp,ptcb));
+
 
 	    /* count the PREVIOUS burst item */
 	    /* NB: the last is counted in tcplib_cleanup_bursts() */
@@ -1271,7 +1467,7 @@ ModuleConnFillcache(
 {
     module_conninfo *pmc;
     enum t_dtype dtype;
-    int i;
+    int dir;
 
     /* fill the cache */
     for (pmc = module_conninfo_tail; pmc ; pmc=pmc->prev) {
@@ -1310,26 +1506,36 @@ ModuleConnFillcache(
 
     for (dtype = LOCAL; dtype <= REMOTE; ++dtype) {
 	/* do the A sides, then the B sides */
-	for (i=1; i <= 2; ++i) {
+	for (LOOP_OVER_BOTH_TCBS(dir)) {
+	    int app;
 	    if (ldebug>1)
 		printf("  Making previous for %s, side %s\n",
-		       dtype_names[i], (i==1)?"A":"B");
-	    for (pmc = module_conninfo_tail; pmc ; ) {
-		module_conninfo_tcb *ptcbc;
+		       dtype_names[dir], (dir==TCB_CACHE_A2B)?"A":"B");
 
-		if (i==1) {
-		    ptcbc = &pmc->tcb_cache[TCB_CACHE_A2B];
-		} else {
-		    ptcbc = &pmc->tcb_cache[TCB_CACHE_B2A];
-		}
+	    /* do conversation interravial calculations by app */
+	    for (app=-1; app <= NUM_APPS; ++app) {
+		/* note: app==-1 means ALL apps */
+		for (pmc = module_conninfo_tail; pmc ; ) {
+		    module_conninfo_tcb *ptcbc = &pmc->tcb_cache[dir];
 
-		if (ptcbc->dtype == dtype) {
-		    module_conninfo *prev
-			= FindPrevConnection(pmc,dtype);
-		    ptcbc->prev_dtype = prev;
-		    pmc = prev;
-		} else {
-		    pmc = pmc->prev;
+		    /* if app != -1, we just want SOME of them */
+		    if ((app != -1) && (pmc->btype != app)) {
+			/* don't want this one, try the next one */
+			pmc = pmc->prev;
+			continue;
+		    }
+
+		    if (ptcbc->dtype == dtype) {
+			module_conninfo *prev
+			    = FindPrevConnection(pmc,dtype,app);
+			if (app == -1)
+			    ptcbc->prev_dtype_all = prev;
+			else
+			    ptcbc->prev_dtype_byapp = prev;
+			pmc = prev;
+		    } else {
+			pmc = pmc->prev;
+		    }
 		}
 	    }
 	}
@@ -1400,24 +1606,25 @@ tcplib_newconn(
 				   * connections */
 
     /* trafgen only uses a few ports... */
-    if (trafgen_data_hack) {
+    if (trafgen_generated) {
 	u_short server_port = ptp->addr_pair.b_port;
 
-	if (server_port < ipport_offset+IPPORT_FTP_DATA)
+	if ((server_port < ipport_offset+IPPORT_FTP_DATA) ||
+	    (server_port > ipport_offset+IPPORT_NNTP)) {
+	    ++debug_newconn_badport;
 	    return(NULL);
-	if (server_port > ipport_offset+IPPORT_NNTP)
-	    return(NULL);
+	}
     }
 
     /* verify that it's a connection we're interested in! */
-    ++newconn_counter;
+    ++debug_newconn_counter;
     btype = breakdown_type(ptp);
     if (btype == TCPLIBPORT_NONE) {
-	++newconn_badport;
+	++debug_newconn_badport;
 	return(NULL); /* so we won't get it back in tcplib_read() */
     } else {
 	/* else, it's acceptable, count it */
-	++newconn_goodport;
+	++debug_newconn_goodport;
     }
 
     /* create the connection-specific data structure */
@@ -1470,8 +1677,22 @@ tcplib_newconn(
     }
 
 
+    /* debugging counter */
+    if (btype == TCPLIBPORT_HTTP)
+	++debug_http_total;
+
+
     /* add to list of endpoints we track */
     TrackEndpoints(pmc);
+
+    /* if it's NOT trafgen generated and it's HTTP, check if it's
+       parallel */
+    if (is_http_conn(pmc) && !trafgen_generated) {
+	if (is_parallel_http(pmc)) {
+	    pmc->ignore_conn = TRUE;
+	}
+    }
+
 
     return (pmc);
 }
@@ -1637,7 +1858,7 @@ static void setup_breakdown(void)
 	char *prefix = dtype_names[ix];
 	char *filename = namedfile(prefix,TCPLIB_BREAKDOWN_GRAPH_FILE);
 
-	if (!(pstats->hist_file = fopen(filename, "w"))) {
+	if (!(pstats->hist_file = Mfopen(filename, "w"))) {
 	    perror(filename);
 	    exit(1);
 	}
@@ -1673,7 +1894,7 @@ static void update_breakdown(
     
     /* Displays the interval number.  A new histogram line is displayed
      * at TIMER_VALUE seconds. */
-    fprintf(pstats->hist_file, "%d\t", pstats->interval_count);
+    Mfprintf(pstats->hist_file, "%d\t", pstats->interval_count);
 
     /* Display some characters for each type of traffic */
     for(i = 0; i < NUM_APPS; i++) {
@@ -1692,13 +1913,13 @@ static void update_breakdown(
 
 	/* Print one hash char per count. */
 	while(count > 0) {
-	    fprintf(pstats->hist_file, "%c", breakdown_hash_char[i]);
+	    Mfprintf(pstats->hist_file, "%c", breakdown_hash_char[i]);
 	    count--;
 	}
     }
 
     /* After we've done all the applications, end the line */
-    fprintf(pstats->hist_file, "\n");
+    Mfprintf(pstats->hist_file, "\n");
 
     /* Zero out the counters */
     for(i = 0; i < NUM_APPS; i++) {
@@ -1745,9 +1966,9 @@ namedfile(
     static char buffer[256];    /* Buffer to store the full file name */
 
     if (!LOCAL_ONLY)
-	sprintf(directory, "%s_%s", output_dir, localsuffix);
+	snprintf(directory,sizeof(directory),"%s_%s", output_dir, localsuffix);
     else
-	sprintf(directory, "%s", output_dir);
+	snprintf(directory,sizeof(directory),"%s", output_dir);
 
     /* try to CREATE the directory if it doesn't exist */
     if (access(directory,F_OK) != 0) {
@@ -1759,7 +1980,7 @@ namedfile(
 	    printf("Created directory '%s'\n", directory);
     }
 
-    sprintf(buffer, "%s/%s", directory, real);
+    snprintf(buffer,sizeof(buffer),"%s/%s", directory, real);
 
     return buffer;
 }
@@ -1788,7 +2009,7 @@ static void do_final_breakdown(
     struct tcplibstats *pstats)
 {
     module_conninfo *pmc;
-    FILE* fil;        /* File descriptor for the traffic breakdown file */
+    MFILE* fil;        /* File descriptor for the traffic breakdown file */
     long file_pos;    /* Offset within the traffic breakdown file */
     u_long num_parallel_http = 0;
 
@@ -1802,13 +2023,13 @@ static void do_final_breakdown(
     char *header = "stub             smtp\tnntp\ttelnet\tftp\thttp\n";
 #endif /* INCLUDE_PHONE_CONV */
 
-    if (!(fil = fopen(filename, "a"))) {
+    if (!(fil = Mfopen(filename, "a"))) {
 	perror("Opening Breakdown File");
 	exit(1);
     }
 
-    fseek(fil, 0, SEEK_END);
-    file_pos = ftell(fil);
+    Mfseek(fil, 0, SEEK_END);
+    file_pos = Mftell(fil);
 
     /* Basically, we're checking to see if this file has already been
      * used.  We have the capability to both start a new set of data
@@ -1817,7 +2038,7 @@ static void do_final_breakdown(
      * have the effect of creating a hybrid traffic pattern, that matches
      * neither of the sources, but shares characteristics of both. */
     if (file_pos < strlen(header)) {
-	fprintf(fil, "%s", header);
+	Mfprintf(fil, "%s", header);
     }
 
     /* We only do this next part if we actually have a file name.  In
@@ -1835,7 +2056,7 @@ static void do_final_breakdown(
 	/* The breakdown file line associated with each trace file is
 	 * prefaced with the trace file's name.  This was part of the
 	 * original TCPLib format. */
-	fprintf(fil, "%-16s ", current_file);
+	Mfprintf(fil, "%-16s ", current_file);
 
 	/* count the connections of each protocol type */
 	for (pmc = module_conninfo_tail; pmc ; pmc = pmc->prev) {
@@ -1890,32 +2111,32 @@ static void do_final_breakdown(
 
 	/* Print out each of the columns we like */
 	/* SMTP */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_SMTP])/ num_tcp_pairs);
 
 	/* NNTP */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_NNTP])/ num_tcp_pairs);
 
 	/* TELNET */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_TELNET])/ num_tcp_pairs);
 
 	/* FTP */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_FTPCTRL])/ num_tcp_pairs);
 
 	/* HTTP */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_HTTP])/ num_tcp_pairs);
 
 #ifdef UNDEF
 	/* FTP Data */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)breakdown_protocol[TCPLIBPORT_FTPDATA])/ num_tcp_pairs);
 
 	/* Parallel HTTP */
-	fprintf(fil, "%.4f\t",
+	Mfprintf(fil, "%.4f\t",
 		((float)num_parallel_http)/ num_tcp_pairs);
 #endif /* UNDEF */
 
@@ -1931,14 +2152,14 @@ static void do_final_breakdown(
 	 * traffic patterns, the interval between converstaions is of
 	 * utmost importance, especially as far as the scalability of
 	 * traffic is concerned. */
-	fprintf(fil, "%.4f\t%.4f", (float)0, (float)0);
-#endif INCLUDE_PHONE_CONV
-	fprintf(fil, "\n");
+	Mfprintf(fil, "%.4f\t%.4f", (float)0, (float)0);
+#endif /* INCLUDE_PHONE_CONV */
+	Mfprintf(fil, "\n");
 
     }
 
-    fclose(fil);
-    fclose(pstats->hist_file);
+    Mfclose(fil);
+    Mfclose(pstats->hist_file);
 }
 
 static void do_all_final_breakdowns(void)
@@ -2073,31 +2294,31 @@ static void do_tcplib_next_converse(
     /* between the starting times of those two connections as the conn */
     /* interrival time */
     /* sdo - Fri Jul  9, 1999 (information already computed in Fillcache) */
-    pmc_previous = ptcbc->prev_dtype;
 
+    /* FIRST, do conversation interarrivals for ALL conns */
+    if (ptcbc->prev_dtype_all != NULL) {
+	pmc_previous = ptcbc->prev_dtype_all;
+	/* elapsed time since that previous connection started */
+	etime = (int)(elapsed(pmc_previous->first_time,
+			      pmc->first_time)/1000.0); /* convert us to ms */
 
-    if (pmc_previous == NULL) {
-	/* no previous connection, this must be the FIRST in */
-	/* this direction */
-	if (ldebug>2) {
-	    printf("    do_tcplib_next_converse: no previous\n");
-	}
-	return;
+	/* keep stats */
+	AddToCounter(&pstats->conv_interarrival_all, etime, 1, 1);
     }
 
 
-    /* elapsed time since that previous connection started */
-    etime = (int)(elapsed(pmc_previous->first_time,
-			  pmc->first_time)/1000.0); /* convert us to ms */
+    /* THEN, do conversation interarrivals by APP type */
+    if (ptcbc->prev_dtype_byapp != NULL) {
+	pmc_previous = ptcbc->prev_dtype_byapp;
+	/* elapsed time since that previous connection started */
+	etime = (int)(elapsed(pmc_previous->first_time,
+			      pmc->first_time)/1000.0); /* convert us to ms */
 
-    if (ldebug>2) {
-	printf("   prev: %s, etime: %d ms\n",
-	       FormatBrief(pmc_previous->ptp, ptcbc->ptcb), etime);
+	/* keep stats */
+	AddToCounter(&pstats->conv_interarrival_byapp[pmc->btype],
+		     etime, 1, 1);
     }
 
-    /* keep stats */
-    AddToCounter(&pstats->conv_interarrival, etime, 1, 1);
-    
     return;
 }
 
@@ -2105,11 +2326,12 @@ static void do_tcplib_next_converse(
 
 
 /* return the previous connection that passes data in the direction */
-/* given in "dtype" */
+/* given in "dtype" and has app type apptype (or -1 for any) */
 module_conninfo *
 FindPrevConnection(
     module_conninfo *pmc,
-    enum t_dtype dtype)
+    enum t_dtype dtype,
+    int app_type)
 {
     module_conninfo_tcb *ptcbc;
     int count = 0;
@@ -2124,6 +2346,9 @@ FindPrevConnection(
 	
 	for (LOOP_OVER_BOTH_TCBS(dir)) {
 	    ptcbc = &pmc->tcb_cache[dir];
+	    if ((app_type != -1) && (app_type != pmc->btype)) {
+		/* skip it, wrong app */
+	    }
 	    if (ptcbc->dtype == dtype) {
 		if (ptcbc->data_bytes != 0)
 		    return(pmc);
@@ -2160,9 +2385,11 @@ FindPrevConnection(
 static void
 do_tcplib_final_converse(
     char *filename,
+    char *protocol,
     dyn_counter psizes)
 {
     const int bucketsize = GRAN_CONVARRIVAL;
+    char title[80];
 
 
 #ifdef READ_OLD_FILES
@@ -2171,10 +2398,11 @@ do_tcplib_final_converse(
     psizes = ReadOldFile(filename, bucketsize, 0, psizes);
 #endif /* READ_OLD_FILES */
 
+    /* generate the graph title of the table */
+    snprintf(title,sizeof(title),"Conversation Interval Time (ms) - %s", protocol);
 
     /* Now, dump out the combined data */
-    StoreCounters(filename,"Conversation Interval Time (ms)",
-		  "% Interarrivals", bucketsize, psizes);
+    StoreCounters(filename,title, "% Interarrivals", bucketsize, psizes);
 
     return;
 }
@@ -2372,6 +2600,11 @@ void do_all_conv_arrivals()
 	    printf("do_all_conv_arrivals: processing pmc %d: %p\n",
 		   ++count, pmc);
 	}
+
+	/* ignore unidirectional HTTP */
+	if (is_http_conn(pmc) && pmc->unidirectional_http)
+	    continue;
+
 
 	for (LOOP_OVER_BOTH_TCBS(dir)) {
 	    if (pmc->tcb_cache[dir].data_bytes != 0) {
@@ -2815,7 +3048,7 @@ StoreCounters(
     int bucketsize,
     dyn_counter psizes)
 {
-    FILE *fil;
+    MFILE *fil;
     int running_total = 0;
     int lines = 0;
 
@@ -2832,12 +3065,12 @@ StoreCounters(
 	}
     }
 
-    if (!(fil = fopen(filename, "w"))) {
+    if (!(fil = Mfopen(filename, "w"))) {
 	perror(filename);
 	exit(1);
     }
 
-    fprintf(fil, "%s\t%s\tRunning Sum\tCounts\n", header1, header2);
+    Mfprintf(fil, "%s\t%s\tRunning Sum\tCounts\n", header1, header2);
 
     if (psizes == NULL) {
 	if (ldebug>1)
@@ -2861,21 +3094,21 @@ StoreCounters(
 	    if (count) {
 		if (first) {
 		    /* see comments above! */
-		    fprintf(fil, "%.3f\t%.4f\t%d\t%d\n",
-			    (float)(value), 0.0, 0, 0);
+		    Mfprintf(fil, "%.3f\t%.4f\t%d\t%d\n",
+			     (float)(value), 0.0, 0, 0);
 		    first = FALSE;
 		}
-		fprintf(fil, "%.3f\t%.4f\t%d\t%lu\n",
-			(float)(value+gran),
-			(float)running_total/(float)total_counter,
-			running_total,
-			count);
+		Mfprintf(fil, "%.3f\t%.4f\t%d\t%lu\n",
+			 (float)(value+gran),
+			 (float)running_total/(float)total_counter,
+			 running_total,
+			 count);
 		++lines;
 	    }
 	}
     }
 
-    fclose(fil);
+    Mfclose(fil);
 
     if (ldebug>1)
 	printf("  Stored %d values into %d lines of '%s'\n",
@@ -3106,11 +3339,11 @@ FormatBrief(
     static char infobuf[100];
 
     if (ptcb == pba)
-	sprintf(infobuf,"%s - %s (%s2%s)",
+	snprintf(infobuf,sizeof(infobuf),"%s - %s (%s2%s)",
 		ptp->b_endpoint, ptp->a_endpoint,
 		pba->host_letter, pab->host_letter);
     else
-	sprintf(infobuf,"%s - %s (%s2%s)",
+	snprintf(infobuf,sizeof(infobuf),"%s - %s (%s2%s)",
 		ptp->a_endpoint, ptp->b_endpoint,
 		pab->host_letter, pba->host_letter);
 
@@ -3125,9 +3358,9 @@ FormatAddrBrief(
     char infobuf1[100];
     char infobuf2[100];
 
-    sprintf(infobuf1,"%s", HostName(paddr_pair->a_address));
-    sprintf(infobuf2,"%s", HostName(paddr_pair->b_address));
-    sprintf(infobuf,"%s - %s", infobuf1, infobuf2);
+    snprintf(infobuf1,sizeof(infobuf1),"%s", HostName(paddr_pair->a_address));
+    snprintf(infobuf2,sizeof(infobuf2),"%s", HostName(paddr_pair->b_address));
+    snprintf(infobuf,sizeof(infobuf),"%s - %s", infobuf1, infobuf2);
 
     return(infobuf);
 }
@@ -3211,8 +3444,52 @@ AddEndpointPair(
     }
 }
 
+
+
+/* remove unidirectional conns from consideration */
+static void
+tcplib_filter_http_uni()
+{
+    module_conninfo *pmc;
+
+    for (pmc = module_conninfo_tail; pmc; pmc = pmc->prev) {
+	if ((pmc->tcb_cache[0].data_bytes == 0) ||
+	    (pmc->tcb_cache[1].data_bytes == 0)) {
+	    /* unidirectional (or no data at all) */
+	    pmc->unidirectional_http = TRUE;
+
+	    /* update counters */
+	    ++debug_http_uni_conns;
+	    debug_http_uni_bytes +=
+		pmc->tcb_cache[0].data_bytes +
+		pmc->tcb_cache[1].data_bytes;
+
+	    /* UNDO other counters */
+	    --debug_http_total;
+	    if (pmc->pparallelism &&
+		(pmc->pparallelism->maxparallel > 1)) {
+		--pmc->pparallelism->maxparallel;
+		--debug_http_parallel;
+
+		/* if this is NOT the last one, decrement slave count */
+		if (pmc->pparallelism->maxparallel > 0) {
+		    --debug_http_slaves;
+		} else {
+		    /* nobody left, empty group */
+		    --debug_http_groups;
+		}
+	    }
+
+	    /* persistance is OK, as those are already ignored
+	       in tcplib_save_bursts */
+
+	}
+    }
+}
+
+
 static Bool
-IsParallelHttp(
+is_parallel_http(
     module_conninfo *pmc_new)
 {
     endpoint_pair *pep;
@@ -3220,6 +3497,7 @@ IsParallelHttp(
     struct parallelism *pp = NULL;
     int dir;
     int parallel_conns = 0;
+    u_long parent_groupnum = 0;
 
     /* see if there are any other connections on these endpoints */
     pep = FindEndpointPair(http_endpoints, &pmc_new->addr_pair);
@@ -3244,19 +3522,11 @@ IsParallelHttp(
 	if ((pmc_new == pmc) || !RecentlyActiveConn(pmc))
 	    continue;
 
-	if (trafgen_data_hack) {
-	    /* recv window sizes for client side must also be the same */
-	    if (pmc_new->ptp->a2b.win_max != pmc->ptp->a2b.win_max) {
-		++trafgen_data_hack_excluded;
-		if (0)
-		printf("%ld(%f) != %ld(%f)\n",
-		       pmc_new->ptp->a2b.win_max,
-		       (float)pmc_new->ptp->a2b.win_max/1460.0,
-		       pmc->ptp->a2b.win_max,
-		       (float)pmc->ptp->a2b.win_max/1460.0);
+	if (trafgen_generated) {
+	    /* burst key group nums must also be the same */
+	    if (pmc_new->http_groupnum != pmc->http_groupnum) {
 		continue;	/* skip it */
 	    }
-	    ++trafgen_data_hack_included;
 	}
 
 
@@ -3266,11 +3536,30 @@ IsParallelHttp(
 	if (pmc->pparallelism == NULL) {
 	    pmc->pparallelism = MallocZ(sizeof(struct parallelism));
 
+	    /* if HE isn't marked, then he must be the "parent",
+	       and this must be a new group */
+	    ++debug_http_groups;
+	    ++debug_http_parallel;
+
+	    /* if this isn't trafgen-generated, give it a group number */
+	    /* (mostly for debugging) */
+	    if (!trafgen_generated) {
+		static u_long groupnum = 0;
+		parent_groupnum = ++groupnum;
+		pmc->http_groupnum = parent_groupnum;
+	    }
+	      
+
 	    /* switch its stats to parallel */
 	    for (LOOP_OVER_BOTH_TCBS(dir)) {
 		module_conninfo_tcb *ptcbc = &pmc->tcb_cache[dir];
 		struct tcplibstats *pstats = global_pstats[ptcbc->dtype];
 		ptcbc->pburst = &pstats->http_P_bursts;
+	    }
+	} else {
+	    /* it's already known to be parallel, so he's my brother */
+	    if (!trafgen_generated) {
+		parent_groupnum = pmc->http_groupnum;
 	    }
 	}
 
@@ -3293,6 +3582,8 @@ IsParallelHttp(
 	return(FALSE);
 
     /* mark ME as parallel too */
+    ++debug_http_slaves;
+    ++debug_http_parallel;
     for (LOOP_OVER_BOTH_TCBS(dir)) {
 	module_conninfo_tcb *ptcbc = &pmc_new->tcb_cache[dir];
 	struct tcplibstats *pstats = global_pstats[ptcbc->dtype];
@@ -3301,6 +3592,9 @@ IsParallelHttp(
 
 /*     printf("FindParallel, marking as parallel %s\n",  */
 /* 	   FormatBrief(pmc_new->ptp)); */
+
+    /* if this isn't trafgen generated, take the group number */
+    pmc_new->http_groupnum = parent_groupnum;
 	
 
     /* update stats on this parallel system */
@@ -3354,18 +3648,6 @@ TrackEndpoints(
 			FormatBrief(pmc->ptp, NULL));
 	}
     }
-
-
-    /* if it's an HTTP connection, see if it's a PARALLEL connection, */
-    /* as often used in http1.0, and then handle it differently */
-    if (is_http_conn(pmc)) {
-	/* for parallel FTTP, we ALSO ignore this one */ 
-	if (IsParallelHttp(pmc)) {
-	    pmc->ignore_conn = TRUE;
-	    ++newconn_http_parallel;
-	}
-
-    }
 }
 
 
@@ -3397,7 +3679,7 @@ CouldBeFtpData(
 	return(FALSE);
 
     /* OK, I guess it COULD be... */
-    ++newconn_ftp_data_heuristic;
+    ++debug_newconn_ftp_data_heuristic;
     return(TRUE);
 }
 
@@ -3552,7 +3834,7 @@ IsNewBurst(
 	if ((last_rtt_usecs != 0) && (etime_usecs < last_rtt_usecs)) {
 	    if (graph_tsg) {
 		char buf[100];
-		sprintf(buf,"short (%ld < %ld)", etime_usecs, last_rtt_usecs);
+		snprintf(buf,sizeof(buf),"short (%ld < %ld)", etime_usecs, last_rtt_usecs);
 		plotter_text(ptcb->tsg_plotter, current_time, seq, "b", buf);
 	    }
 	    return(FALSE);
@@ -3595,7 +3877,7 @@ ActiveConn(
 
 /* is this connection "parallel" */
 /* 1: ActiveConn() */
-/* 2: last packets sent "recently" (defined as within 1 second) */
+/* 2: last packets sent "recently" (defined as within 10 seconds) */
 static Bool
 RecentlyActiveConn(
     module_conninfo *pmc)
@@ -3609,8 +3891,8 @@ RecentlyActiveConn(
 	timeval last_packet = pmc->tcb_cache[dir].ptcb->last_time;
 
 	/* elapsed time from last packet (in MICROseconds) */
-	if (elapsed(last_packet,current_time) < 1*US_PER_SEC) {
-	    /* 1 second is close enough... */
+	if (elapsed(last_packet,current_time) < 10*US_PER_SEC) {
+	    /* 10 seconds for now, hope it works! */
 	    return(TRUE);
 	}
     }

@@ -1,34 +1,60 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/netm.c,v 5.2 1999/02/25 15:01:26 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/netm.c,v 5.4 2002/06/21 09:56:26 alakhian Exp $";
 
 
 /* 
@@ -43,6 +69,13 @@ static char const rcsid[] =
 
 #define NETM_DUMP_OFFSET 0x1000
 
+/* Defining SYS_STDIN which is fp for Windows and stdin for all other systems */
+#ifdef __WIN32
+static FILE *fp;
+#define SYS_STDIN fp
+#else
+#define SYS_STDIN stdin
+#endif /* __WIN32 */
 
 /* netm file header format */
 struct netm_header {
@@ -108,7 +141,7 @@ pread_netm(
 	    (sizeof(struct netm_packet_header));
 
 	/* read the netm packet header */
-	if ((rlen=fread(&hdr,1,hlen,stdin)) != hlen) {
+	if ((rlen=fread(&hdr,1,hlen,SYS_STDIN)) != hlen) {
 	    if (rlen != 0)
 		fprintf(stderr,"Bad netm header\n");
 	    return(0);
@@ -119,7 +152,7 @@ pread_netm(
 	len = (packlen + 3) & ~0x3;
 
 	/* read the ethernet header */
-	rlen=fread(pep,1,sizeof(struct ether_header),stdin);
+	rlen=fread(pep,1,sizeof(struct ether_header),SYS_STDIN);
 	if (rlen != sizeof(struct ether_header)) {
 	    fprintf(stderr,"Couldn't read ether header\n");
 	    return(0);
@@ -133,7 +166,7 @@ pread_netm(
 		    "pread_netm: invalid next packet, IP len is %d, return EOF\n", len);
 	    return(0);
 	}
-	if ((rlen=fread(pip_buf,1,len,stdin)) != len) {
+	if ((rlen=fread(pip_buf,1,len,SYS_STDIN)) != len) {
 	    if (rlen != 0)
 		if (debug)
 		    fprintf(stderr,
@@ -179,17 +212,24 @@ pread_netm(
 
 
 /* is the input file a NetMetrix format file?? */
-pread_f *is_netm(void)
+pread_f *is_netm(char *filename)
 {
     struct netm_header nhdr;
     int rlen;
+   
+#ifdef __WIN32
+    if((fp = fopen(filename, "r")) == NULL) {
+       perror(filename);
+       exit(-1);
+    }
+#endif /* __WIN32 */   
 
     /* read the netm file header */
-    if ((rlen=fread(&nhdr,1,sizeof(nhdr),stdin)) != sizeof(nhdr)) {
-	rewind(stdin);
+    if ((rlen=fread(&nhdr,1,sizeof(nhdr),SYS_STDIN)) != sizeof(nhdr)) {
+	rewind(SYS_STDIN);
 	return(NULL);
     }
-    rewind(stdin);
+    rewind(SYS_STDIN);
 
     /* convert to local byte order */
     nhdr.netm_key = ntohl(nhdr.netm_key);
@@ -216,7 +256,7 @@ pread_f *is_netm(void)
 	printf("NETM file version: %d\n", nhdr.version);
 
     /* ignore the header at the top */
-    if (fseek(stdin,NETM_DUMP_OFFSET,SEEK_SET) == -1) {
+    if (fseek(SYS_STDIN,NETM_DUMP_OFFSET,SEEK_SET) == -1) {
 	perror("NETM lseek");
 	exit(-1);
     }

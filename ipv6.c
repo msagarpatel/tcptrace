@@ -1,33 +1,59 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Nasseef Abukamail
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
+ *		http://www.tcptrace.org/
  */
 static char const copyright[] =
-    "@(#)Copyright (c) 1999 -- Shawn Ostermann -- Ohio University.  All rights reserved.\n";
+    "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/ipv6.c,v 5.10 1999/09/08 02:43:07 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.c,v 5.19 2001/12/03 15:58:49 sdo Exp $";
 
 
 #include "tcptrace.h"
@@ -75,11 +101,18 @@ ipv6_nextheader(
 	*pnextheader = pheader->ip6ext_nheader;
 
 	/* sanity check, if length is 0, terminate */
-	if (pheader->ip6ext_len == 0)
-	    return(NULL);
-	
+  	/* As per RFC 2460 : ip6ext_len specifies the extended
+   	 	 header length, in units of 8 octets *not including* the
+	 	 first 8 octets.  So ip6ext_len can be 0 and hence,
+		 we cannot perform the sanity check any more.
+
+		 Hence commenting out the sanity check - Mani*/
+		 
+	/* if (pheader->ip6ext_len == 0)
+	    return(NULL); */
+
 	return((struct ipv6_ext *)
-	       ((char *)pheader + pheader->ip6ext_len));
+		   ((char *)pheader + 8 + (pheader->ip6ext_len)*8));
 
 	/* I don't understand them.  Just save the type and return a NULL */
       default:
@@ -91,13 +124,17 @@ ipv6_nextheader(
 
 
 /*
- * gettcp:  return a pointer to a tcp header.
+ * findheader:  find and return a pointer to a header.
  * Skips either ip or ipv6 headers
+ * return values:  0 - found header
+ *                 1 - correct protocol, invalid packet, cannot return header
+ *                -1 - different protocol, cannot return header 
  */
-static void *
+static int
 findheader(
     u_int ipproto,
     struct ip *pip,
+    void **pphdr,
     void **pplast)
 {
     struct ipv6 *pip6 = (struct ipv6 *)pip;
@@ -109,44 +146,45 @@ findheader(
     if (PIP_ISV4(pip)) {
 	/* make sure it's what we want */
 	if (pip->ip_p != ipproto)
-	    return(NULL);
+	    return (-1);
 
 	/* check the fragment field, if it's not the first fragment,
 	   it's useless (offset part of field must be 0 */
 	if ((ntohs(pip->ip_off)&0x1fff) != 0) {
 	    if (debug>1) {
-		printf("gettcp: Skipping IPv4 non-initial fragment\n");
+		printf("findheader: Skipping IPv4 non-initial fragment\n");
 		if (debug > 2) {
-		    printpacket(100,100,NULL,0,pip,*pplast);
+		    printpacket(100,100,NULL,0,pip,*pplast,NULL);
 		}
 	    }
-	    return(NULL);
+	    return (1);
 	}
 
 	/* OK, it starts here */
-	theheader = ((char *)pip + 4*pip->ip_hl);
+	theheader = ((char *)pip + 4*IP_HL(pip));
 
 	/* adjust plast in accordance with ip_len (really short packets get garbage) */
-	if (((unsigned)pip + ntohs(pip->ip_len) - 1) < (unsigned)(*pplast)) {
-	    *pplast = (void *)((unsigned)pip + ntohs(pip->ip_len));
+	if (((char *)pip + ntohs(pip->ip_len) - 1) < (char *)(*pplast)) {
+	    *pplast = (char *)((char *)pip + ntohs(pip->ip_len));
 	}
 
 #ifdef OLD
 	/* this is better verified when used, the error message is better */
 
 	/* make sure the whole header is there */
-	if ((u_long)ptcp + (sizeof struct tcphdr) - 1 > (u_long)*pplast) {
+	if ((char *)ptcp + (sizeof struct tcphdr) - 1 > (char *)*pplast) {
 	    /* part of the header is missing */
-	    return(NULL);
+	    return (1);
 	}
 #endif
 
-	return (theheader);
+	*pphdr = theheader;
+	return (0);
     }
 
     /* otherwise, we only understand IPv6 */
     if (!PIP_ISV6(pip))
-	return(NULL);
+	return (-1);
 
     /* find the first header */
     nextheader = pip6->ip6_nheader;
@@ -156,33 +194,31 @@ findheader(
     while (1) {
 	/* sanity check, if we're reading bogus header, the length might */
 	/* be wonky, so make sure before you dereference anything!! */
-	if ((void *)pheader < (void *)pip) {
+	if ((char *)pheader < (char *)pip) {
 	    if (debug>1)
 		printf("findheader: bad extension header math, skipping packet\n");
-	    return(NULL);
+	    return (1);
 	}
 	
 	/* make sure we're still within the packet */
 	/* might be truncated, or might be bad header math */
-	if ((void *)pheader > *pplast) {
+	if ((char *)pheader > (char *)*pplast) {
 	    if (debug>3)
 		printf("findheader: packet truncated before finding header\n");
-	    return(NULL);
+	    return (1);
 	}
 
 	/* this is what we want */
-	if (nextheader == ipproto)
-	    return(pheader);
+	if (nextheader == ipproto) {
+	   *pphdr = pheader;
+	   return (0);
+	}
 
 	switch (nextheader) {
 	  case IPPROTO_TCP:
-	    return(NULL);	/* didn't find it */
+	    return (-1);	/* didn't find it */
 	  case IPPROTO_UDP:
-	    return(NULL);	/* didn't find it */
-
-	    /* non-tcp protocols */
-	  case IPPROTO_NONE:
-	  case IPPROTO_ICMPV6:
+	    return (-1);	/* didn't find it */
 
 	    /* fragmentation */
 	  case IPPROTO_FRAGMENT:
@@ -194,14 +230,16 @@ findheader(
 	      if ((pfrag->ip6ext_fr_offset&0xfc) != 0) {
 		  /* the offset is non-zero */
 		  if (debug>1)
-		      printf("gettcp: Skipping IPv6 non-initial fragment\n");
-		  return(NULL);
+		      printf("findheader: Skipping IPv6 non-initial fragment\n");
+		  return (1);
 	      }
 
 	      /* otherwise it's either an entire segment or the first fragment */
-	      nextheader = pheader->ip6ext_nheader;
+	      nextheader = pfrag->ip6ext_fr_nheader;
+		  /* Pass to the next octet following the fragmentation
+		     header */
 	      pheader = (struct ipv6_ext *)
-		  ((char *)pheader + pheader->ip6ext_len);
+		  ((char *)pheader + sizeof(struct ipv6_ext_frag));
 	      break;
 	  }
 
@@ -210,22 +248,47 @@ findheader(
 	  case IPPROTO_ROUTING:
 	  case IPPROTO_DSTOPTS:
 	      nextheader = pheader->ip6ext_nheader;
+
+		  /* As per RFC 2460 : ip6ext_len specifies the extended
+		     header length, in units of 8 octets *not including* the
+			 first 8 octets. */
+		  
 	      pheader = (struct ipv6_ext *)
-		  ((char *)pheader + pheader->ip6ext_len);
-	      break;
+		  ((char *)pheader + 8 + (pheader->ip6ext_len)*8);
+
+	    /* non-tcp protocols, so we're finished. */
+	  case IPPROTO_NONE:
+	  case IPPROTO_ICMPV6:
+	    return (-1);	/* didn't find it */
 
 	  /* I "think" that we can just skip over it, but better be careful */
 	  default:
 	      nextheader = pheader->ip6ext_nheader;
+
 	      pheader = (struct ipv6_ext *)
-		  ((char *)pheader + pheader->ip6ext_len);
+		  ((char *)pheader + 8 + (pheader->ip6ext_len)*8);
 	      break;
 
 	} /* end switch */
     }  /* end loop */
 
     /* shouldn't get here, but just in case :-) */
-    return NULL;
+    return (-1);
+}
+
+/* Added Aug 31, 2001 -- Avinash.
+ * getroutingheader:  return a pointer to the routing header in an ipv6 packet.
+ * Looks through all the IPv6 extension headers for the routing header.
+ * Used while computing the IPv6 checksums.
+ */
+int
+getroutingheader(
+    struct ip *pip,
+    struct ipv6_ext **ppipv6_ext,
+    void **pplast)
+{
+    int ret_val = findheader(IPPROTO_ROUTING, pip, (void **)ppipv6_ext, pplast);
+    return (ret_val);
 }
 
 
@@ -233,14 +296,14 @@ findheader(
  * gettcp:  return a pointer to a tcp header.
  * Skips either ip or ipv6 headers
  */
-struct tcphdr *
+int
 gettcp(
     struct ip *pip,
+    struct tcphdr **pptcp,
     void **pplast)
 {
-    struct tcphdr *ptcp;
-    ptcp = (struct tcphdr *)findheader(IPPROTO_TCP,pip,pplast);
-    return(ptcp);
+    int ret_val = findheader(IPPROTO_TCP, pip, (void **)pptcp, pplast);
+    return (ret_val);
 }
 
 
@@ -248,14 +311,14 @@ gettcp(
  * getudp:  return a pointer to a udp header.
  * Skips either ip or ipv6 headers
  */
-struct udphdr *
+int
 getudp(
     struct ip *pip,
+    struct udphdr **ppudp,
     void **pplast)
 {
-    struct udphdr *pudp;
-    pudp = (struct udphdr *)findheader(IPPROTO_UDP,pip,pplast);
-    return(pudp);
+   int ret_val = findheader(IPPROTO_UDP, pip, (void **)ppudp, pplast);
+   return (ret_val);
 }
 
 
@@ -305,7 +368,7 @@ int gethdrlength (struct ip *pip, void *plast)
     }
     else
     {
-	return pip->ip_hl * 4;
+	return IP_HL(pip) * 4;
     }
 }
 
@@ -320,7 +383,7 @@ int getpayloadlength (struct ip *pip, void *plast)
 	pipv6 = (struct ipv6 *) pip;  /* how about all headers */
 	return ntohs(pipv6->ip6_lngth);
     }
-    return ntohs(pip->ip_len) - (pip->ip_hl * 4);
+    return ntohs(pip->ip_len) - (IP_HL(pip) * 4);
 }
 
 
@@ -536,8 +599,8 @@ int IPcmp(
 {
     int i;
     int len = (pipA->addr_vers == 4)?4:6;
-    u_char *left = (char *)&pipA->un.ip4;
-    u_char *right = (char *)&pipB->un.ip4;
+    u_char *left = (u_char *)&pipA->un.ip4;
+    u_char *right = (u_char *)&pipB->un.ip4;
 
     /* always returns -2 unless both same type */
     if (pipA->addr_vers != pipB->addr_vers) {
@@ -562,3 +625,49 @@ int IPcmp(
     /* if we got here, they're the same */
     return(0);
 }
+
+
+/* Added Aug 31, 2001 -- Avinash
+ * computes the total length of all the extension headers
+ */ 
+int total_length_ext_headers(
+	struct ipv6 *pip6)
+{  
+    char nextheader;
+    struct ipv6_ext *pheader;
+    u_int total_length = 0;
+    
+    /* find the first header */
+    nextheader = pip6->ip6_nheader;
+    pheader = (struct ipv6_ext *)(pip6+1);
+
+   
+   while(1) {
+      switch(nextheader) {
+       case IPPROTO_HOPOPTS:
+       case IPPROTO_ROUTING:
+       case IPPROTO_DSTOPTS:
+	 total_length = 8 + (pheader->ip6ext_len * 8);
+	 nextheader = pheader->ip6ext_nheader;
+	 pheader = (struct ipv6_ext *)
+	   ((char *)pheader + 8 + (pheader->ip6ext_len)*8);
+	 break;
+	 
+       case IPPROTO_FRAGMENT:
+	 total_length += 8;
+	 nextheader = pheader->ip6ext_nheader;
+	 pheader = (struct ipv6_ext *)((char *)pheader + 8);
+	 break;
+       
+       case IPPROTO_NONE: /* End of extension headers */
+	 return(total_length);
+	 
+       case IPPROTO_TCP:  /* No extension headers */
+	 return(0);
+	 
+       default:           /* Unknown type */
+	 return(-1);
+      }
+   }
+}
+

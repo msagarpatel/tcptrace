@@ -1,33 +1,59 @@
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * 
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
  *		ostermann@cs.ohiou.edu
+ *		http://www.tcptrace.org/
  */
 /* Added FDDI support 9/96 Jeffrey Semke, Pittsburgh Supercomputing Center */
 static char const rcsid_tcpdump[] =
-    "@(#)$Header: /home/sdo/src/tcptrace/src/RCS/tcpdump.h,v 5.4 1999/08/30 15:15:06 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcpdump.h,v 5.8 2003/03/06 19:02:02 mramadas Exp $";
 
 
 #define	SWAPLONG(y) \
@@ -41,30 +67,42 @@ static char const rcsid_tcpdump[] =
  * Data-link level type codes.
  */
 
+/* Note - Tue Feb 13, 2001
+   We're having trouble with the standard DLT_type because some OS versions,
+   insist on renumbering these to different values.  To avoid the problem,
+   we're hijacking the types a little and adding the PCAP_ prefix.  The
+   constants all correspond to the "true" pcap numbers, so this should
+   fix the problem */
+
 /* currently supported */
-#define DLT_NULL	0	/* no link-layer encapsulation */
-#define DLT_EN10MB	1	/* Ethernet (10Mb) */
-#define DLT_IEEE802	6	/* IEEE 802 Networks */
-#define DLT_SLIP	8	/* Serial Line IP */
-#define DLT_FDDI	10	/* FDDI */
-#define DLT_ATM_RFC1483	11	/* LLC/SNAP encapsulated atm */
-#define DLT_RAW		12	/* raw IP */
+#define PCAP_DLT_NULL		0	/* no link-layer encapsulation */
+#define PCAP_DLT_EN10MB		1	/* Ethernet (10Mb) */
+#define PCAP_DLT_IEEE802	6	/* IEEE 802 Networks */
+#define PCAP_DLT_SLIP		8	/* Serial Line IP */
+#define PCAP_DLT_FDDI		10	/* FDDI */
+#define PCAP_DLT_ATM_RFC1483	11	/* LLC/SNAP encapsulated atm */
+#define PCAP_DLT_RAW		12	/* raw IP */
+#define PCAP_DLT_IEEE802_11     105     /* IEEE 802.11 wireless */
+#define PCAP_DLT_LINUX_SLL      113     /* Linux cooked socket */
+#define PCAP_DLT_PRISM2         119     /* Prism2 raw capture header */
+#define PCAP_DLT_IEEE802_11_RADIO 127   /* 802.11 plus WLAN header */
 
 /* NOT currently supported */
 /* (mostly because I don't have an example file, send me one...) */
-#define DLT_EN3MB	2	/* Experimental Ethernet (3Mb) */
-#define DLT_AX25	3	/* Amateur Radio AX.25 */
-#define DLT_PRONET	4	/* Proteon ProNET Token Ring */
-#define DLT_CHAOS	5	/* Chaos */
-#define DLT_ARCNET	7	/* ARCNET */
-#define DLT_PPP		9	/* Point-to-point Protocol */
-#define DLT_SLIP_BSDOS	13	/* BSD/OS Serial Line IP */
-#define DLT_PPP_BSDOS	14	/* BSD/OS Point-to-point Protocol */
+#define PCAP_DLT_EN3MB		2	/* Experimental Ethernet (3Mb) */
+#define PCAP_DLT_AX25		3	/* Amateur Radio AX.25 */
+#define PCAP_DLT_PRONET		4	/* Proteon ProNET Token Ring */
+#define PCAP_DLT_CHAOS		5	/* Chaos */
+#define PCAP_DLT_ARCNET		7	/* ARCNET */
+#define PCAP_DLT_PPP		9	/* Point-to-point Protocol */
+#define PCAP_DLT_SLIP_BSDOS	13	/* BSD/OS Serial Line IP */
+#define PCAP_DLT_PPP_BSDOS	14	/* BSD/OS Point-to-point Protocol */
 
 
 
 /* tcpdump file header */
 #define TCPDUMP_MAGIC 0xa1b2c3d4
+
 struct dump_file_header {
 	u_int	magic;
 	u_short version_major;
@@ -72,7 +110,7 @@ struct dump_file_header {
 	int	thiszone;	/* gmt to local correction */
 	u_int	sigfigs;	/* accuracy of timestamps */
 	u_int	snaplen;	/* max length saved portion of each pkt */
-	u_int	linktype;	/* data link type (DLT_*) */
+	u_int	linktype;	/* data link type (PCAP_DLT_*) */
 };
 
 

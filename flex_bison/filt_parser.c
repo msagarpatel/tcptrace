@@ -1,7 +1,6 @@
 
-/*  A Bison parser, made from filt_parser.y
- by  GNU Bison version 1.25
-  */
+/*  A Bison parser, made from ./filt_parser.y
+    by GNU Bison version 1.28  */
 
 #define YYBISON 1  /* Identify Bison output.  */
 
@@ -12,59 +11,85 @@
 #define yychar filtyychar
 #define yydebug filtyydebug
 #define yynerrs filtyynerrs
-#define	EOS	258
-#define	LPAREN	259
-#define	RPAREN	260
-#define	GREATER	261
-#define	GREATER_EQ	262
-#define	LESS	263
-#define	LESS_EQ	264
-#define	EQUAL	265
-#define	NEQUAL	266
-#define	NOT	267
-#define	AND	268
-#define	OR	269
-#define	BAND	270
-#define	BOR	271
-#define	PLUS	272
-#define	MINUS	273
-#define	TIMES	274
-#define	DIVIDE	275
-#define	MOD	276
-#define	VARIABLE	277
-#define	STRING	278
-#define	SIGNED	279
-#define	UNSIGNED	280
-#define	BOOL	281
-#define	IPADDR	282
+#define	EOS	257
+#define	LPAREN	258
+#define	RPAREN	259
+#define	GREATER	260
+#define	GREATER_EQ	261
+#define	LESS	262
+#define	LESS_EQ	263
+#define	EQUAL	264
+#define	NEQUAL	265
+#define	NOT	266
+#define	AND	267
+#define	OR	268
+#define	BAND	269
+#define	BOR	270
+#define	PLUS	271
+#define	MINUS	272
+#define	TIMES	273
+#define	DIVIDE	274
+#define	MOD	275
+#define	VARIABLE	276
+#define	STRING	277
+#define	SIGNED	278
+#define	UNSIGNED	279
+#define	BOOL	280
+#define	IPADDR	281
 
-#line 1 "filt_parser.y"
+#line 1 "./filt_parser.y"
 
 /*
- * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999
- *	Ohio University.  All rights reserved.
+ * Copyright (c) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+ *	Ohio University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that: (1) source code
- * distributions retain the above copyright notice and this paragraph
- * in its entirety, (2) distributions including binary code include
- * the above copyright notice and this paragraph in its entirety in
- * the documentation or other materials provided with the
- * distribution, and (3) all advertising materials mentioning features
- * or use of this software display the following acknowledgment:
- * ``This product includes software developed by the Ohio University
- * Internetworking Research Laboratory.''  Neither the name of the
- * University nor the names of its contributors may be used to endorse
- * or promote products derived from this software without specific
- * prior written permission.
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ * ---
+ * Starting with the release of tcptrace version 6 in 2001, tcptrace
+ * is licensed under the GNU General Public License (GPL).  We believe
+ * that, among the available licenses, the GPL will do the best job of
+ * allowing tcptrace to continue to be a valuable, freely-available
+ * and well-maintained tool for the networking community.
+ *
+ * Previous versions of tcptrace were released under a license that
+ * was much less restrictive with respect to how tcptrace could be
+ * used in commercial products.  Because of this, I am willing to
+ * consider alternate license arrangements as allowed in Section 10 of
+ * the GNU GPL.  Before I would consider licensing tcptrace under an
+ * alternate agreement with a particular individual or company,
+ * however, I would have to be convinced that such an alternative
+ * would be to the greater benefit of the networking community.
+ * 
+ * ---
+ *
+ * This file is part of Tcptrace.
+ *
+ * Tcptrace was originally written and continues to be maintained by
+ * Shawn Ostermann with the help of a group of devoted students and
+ * users (see the file 'THANKS').  The work on tcptrace has been made
+ * possible over the years through the generous support of NASA GRC,
+ * the National Science Foundation, and Sun Microsystems.
+ *
+ * Tcptrace is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Tcptrace is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tcptrace (in the file 'COPYING'); if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
+ * 
  * 
  * Author:	Shawn Ostermann
  * 		School of Electrical Engineering and Computer Science
  * 		Ohio University
  * 		Athens, OH
+ *		http://www.tcptrace.org/
  *		ostermann@cs.ohiou.edu
  */
 
@@ -79,7 +104,7 @@
 
 
 
-#line 44 "filt_parser.y"
+#line 70 "./filt_parser.y"
 typedef union	{ /* the types that we use in the tokens */
     char *string;
     long signed_long;
@@ -103,7 +128,7 @@ typedef union	{ /* the types that we use in the tokens */
 #define	YYFLAG		-32768
 #define	YYNTBASE	28
 
-#define YYTRANSLATE(x) ((unsigned)(x) <= 282 ? yytranslate[x] : 33)
+#define YYTRANSLATE(x) ((unsigned)(x) <= 281 ? yytranslate[x] : 33)
 
 static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -131,10 +156,10 @@ static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-     2,     2,     2,     2,     2,     1,     2,     3,     4,     5,
-     6,     7,     8,     9,    10,    11,    12,    13,    14,    15,
-    16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
-    26,    27
+     2,     2,     2,     2,     2,     1,     3,     4,     5,     6,
+     7,     8,     9,    10,    11,    12,    13,    14,    15,    16,
+    17,    18,    19,    20,    21,    22,    23,    24,    25,    26,
+    27
 };
 
 #if YYDEBUG != 0
@@ -159,9 +184,9 @@ static const short yyrhs[] = {    29,
 
 #if YYDEBUG != 0
 static const short yyrline[] = { 0,
-    84,    89,    91,    93,    95,    97,   103,   105,   107,   109,
-   111,   113,   115,   117,   119,   124,   126,   128,   130,   132,
-   134,   140,   142,   144,   146,   148,   150
+   110,   115,   117,   119,   121,   123,   129,   131,   133,   135,
+   137,   139,   141,   143,   145,   150,   152,   154,   156,   158,
+   160,   166,   168,   170,   172,   174,   176
 };
 #endif
 
@@ -235,7 +260,8 @@ static const short yycheck[] = {     4,
     20,    21,    17,    18,    19,    20,    21,    19,    20,    21
 };
 /* -*-C-*-  Note some compilers choke on comments on `#line' lines.  */
-#line 3 "/usr/local/gnu/share/bison.simple"
+#line 3 "/usr/share/bison.simple"
+/* This file comes from bison-1.28.  */
 
 /* Skeleton output parser for bison,
    Copyright (C) 1984, 1989, 1990 Free Software Foundation, Inc.
@@ -252,46 +278,66 @@ static const short yycheck[] = {     4,
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 /* As a special exception, when this file is copied by Bison into a
    Bison output file, you may use that output file without restriction.
    This special exception was added by the Free Software Foundation
    in version 1.24 of Bison.  */
 
-#ifndef alloca
-#ifdef __GNUC__
-#define alloca __builtin_alloca
-#else /* not GNU C.  */
-#if (!defined (__STDC__) && defined (sparc)) || defined (__sparc__) || defined (__sparc) || defined (__sgi)
-#include <alloca.h>
-#else /* not sparc */
-#if defined (MSDOS) && !defined (__TURBOC__)
-#include <malloc.h>
-#else /* not MSDOS, or __TURBOC__ */
-#if defined(_AIX)
-#include <malloc.h>
- #pragma alloca
-#else /* not MSDOS, __TURBOC__, or _AIX */
-#ifdef __hpux
-#ifdef __cplusplus
-extern "C" {
-void *alloca (unsigned int);
-};
-#else /* not __cplusplus */
-void *alloca ();
-#endif /* not __cplusplus */
-#endif /* __hpux */
-#endif /* not _AIX */
-#endif /* not MSDOS, or __TURBOC__ */
-#endif /* not sparc.  */
-#endif /* not GNU C.  */
-#endif /* alloca not defined.  */
-
 /* This is the parser code that is written into each bison parser
   when the %semantic_parser declaration is not specified in the grammar.
   It was written by Richard Stallman by simplifying the hairy parser
   used when %semantic_parser is specified.  */
+
+#ifndef YYSTACK_USE_ALLOCA
+#ifdef alloca
+#define YYSTACK_USE_ALLOCA
+#else /* alloca not defined */
+#ifdef __GNUC__
+#define YYSTACK_USE_ALLOCA
+#define alloca __builtin_alloca
+#else /* not GNU C.  */
+#if (!defined (__STDC__) && defined (sparc)) || defined (__sparc__) || defined (__sparc) || defined (__sgi) || (defined (__sun) && defined (__i386))
+#define YYSTACK_USE_ALLOCA
+#include <alloca.h>
+#else /* not sparc */
+/* We think this test detects Watcom and Microsoft C.  */
+/* This used to test MSDOS, but that is a bad idea
+   since that symbol is in the user namespace.  */
+#if (defined (_MSDOS) || defined (_MSDOS_)) && !defined (__TURBOC__)
+#if 0 /* No need for malloc.h, which pollutes the namespace;
+	 instead, just don't use alloca.  */
+#include <malloc.h>
+#endif
+#else /* not MSDOS, or __TURBOC__ */
+#if defined(_AIX)
+/* I don't know what this was needed for, but it pollutes the namespace.
+   So I turned it off.   rms, 2 May 1997.  */
+/* #include <malloc.h>  */
+ #pragma alloca
+#define YYSTACK_USE_ALLOCA
+#else /* not MSDOS, or __TURBOC__, or _AIX */
+#if 0
+#ifdef __hpux /* haible@ilog.fr says this works for HPUX 9.05 and up,
+		 and on HPUX 10.  Eventually we can turn this on.  */
+#define YYSTACK_USE_ALLOCA
+#define alloca __builtin_alloca
+#endif /* __hpux */
+#endif
+#endif /* not _AIX */
+#endif /* not MSDOS, or __TURBOC__ */
+#endif /* not sparc */
+#endif /* not GNU C */
+#endif /* alloca not defined */
+#endif /* YYSTACK_USE_ALLOCA not defined */
+
+#ifdef YYSTACK_USE_ALLOCA
+#define YYSTACK_ALLOC alloca
+#else
+#define YYSTACK_ALLOC malloc
+#endif
 
 /* Note: there must be only one dollar sign in this file.
    It is replaced by the list of actions, each action
@@ -301,8 +347,8 @@ void *alloca ();
 #define yyclearin	(yychar = YYEMPTY)
 #define YYEMPTY		-2
 #define YYEOF		0
-#define YYACCEPT	return(0)
-#define YYABORT 	return(1)
+#define YYACCEPT	goto yyacceptlab
+#define YYABORT 	goto yyabortlab
 #define YYERROR		goto yyerrlab1
 /* Like YYERROR except do call yyerror.
    This remains here temporarily to ease the
@@ -383,12 +429,12 @@ int yydebug;			/*  nonzero means print parse trace	*/
 #ifndef YYMAXDEPTH
 #define YYMAXDEPTH 10000
 #endif
-
-/* Prevent warning if -Wstrict-prototypes.  */
-#ifdef __GNUC__
-int yyparse (void);
-#endif
 
+/* Define __yy_memcpy.  Note that the size argument
+   should be passed with type unsigned int, because that is what the non-GCC
+   definitions require.  With GCC, __builtin_memcpy takes an arg
+   of type size_t, but it can handle unsigned int.  */
+
 #if __GNUC__ > 1		/* GNU C and GNU C++ define this.  */
 #define __yy_memcpy(TO,FROM,COUNT)	__builtin_memcpy(TO,FROM,COUNT)
 #else				/* not GNU C or C++ */
@@ -400,7 +446,7 @@ static void
 __yy_memcpy (to, from, count)
      char *to;
      char *from;
-     int count;
+     unsigned int count;
 {
   register char *f = from;
   register char *t = to;
@@ -415,10 +461,10 @@ __yy_memcpy (to, from, count)
 /* This is the most reliable way to avoid incompatibilities
    in available built-in functions on various systems.  */
 static void
-__yy_memcpy (char *to, char *from, int count)
+__yy_memcpy (char *to, char *from, unsigned int count)
 {
-  register char *f = from;
   register char *t = to;
+  register char *f = from;
   register int i = count;
 
   while (i-- > 0)
@@ -428,7 +474,7 @@ __yy_memcpy (char *to, char *from, int count)
 #endif
 #endif
 
-#line 196 "/usr/local/gnu/share/bison.simple"
+#line 217 "/usr/share/bison.simple"
 
 /* The user can define YYPARSE_PARAM as the name of an argument to be passed
    into yyparse.  The argument should have type void *.
@@ -448,6 +494,15 @@ __yy_memcpy (char *to, char *from, int count)
 #define YYPARSE_PARAM_ARG
 #define YYPARSE_PARAM_DECL
 #endif /* not YYPARSE_PARAM */
+
+/* Prevent warning if -Wstrict-prototypes.  */
+#ifdef __GNUC__
+#ifdef YYPARSE_PARAM
+int yyparse (void *);
+#else
+int yyparse (void);
+#endif
+#endif
 
 int
 yyparse(YYPARSE_PARAM_ARG)
@@ -477,6 +532,7 @@ yyparse(YYPARSE_PARAM_ARG)
 #endif
 
   int yystacksize = YYINITDEPTH;
+  int yyfree_stacks = 0;
 
 #ifdef YYPURE
   int yychar;
@@ -561,18 +617,32 @@ yynewstate:
       if (yystacksize >= YYMAXDEPTH)
 	{
 	  yyerror("parser stack overflow");
+	  if (yyfree_stacks)
+	    {
+	      free (yyss);
+	      free (yyvs);
+#ifdef YYLSP_NEEDED
+	      free (yyls);
+#endif
+	    }
 	  return 2;
 	}
       yystacksize *= 2;
       if (yystacksize > YYMAXDEPTH)
 	yystacksize = YYMAXDEPTH;
-      yyss = (short *) alloca (yystacksize * sizeof (*yyssp));
-      __yy_memcpy ((char *)yyss, (char *)yyss1, size * sizeof (*yyssp));
-      yyvs = (YYSTYPE *) alloca (yystacksize * sizeof (*yyvsp));
-      __yy_memcpy ((char *)yyvs, (char *)yyvs1, size * sizeof (*yyvsp));
+#ifndef YYSTACK_USE_ALLOCA
+      yyfree_stacks = 1;
+#endif
+      yyss = (short *) YYSTACK_ALLOC (yystacksize * sizeof (*yyssp));
+      __yy_memcpy ((char *)yyss, (char *)yyss1,
+		   size * (unsigned int) sizeof (*yyssp));
+      yyvs = (YYSTYPE *) YYSTACK_ALLOC (yystacksize * sizeof (*yyvsp));
+      __yy_memcpy ((char *)yyvs, (char *)yyvs1,
+		   size * (unsigned int) sizeof (*yyvsp));
 #ifdef YYLSP_NEEDED
-      yyls = (YYLTYPE *) alloca (yystacksize * sizeof (*yylsp));
-      __yy_memcpy ((char *)yyls, (char *)yyls1, size * sizeof (*yylsp));
+      yyls = (YYLTYPE *) YYSTACK_ALLOC (yystacksize * sizeof (*yylsp));
+      __yy_memcpy ((char *)yyls, (char *)yyls1,
+		   size * (unsigned int) sizeof (*yylsp));
 #endif
 #endif /* no yyoverflow */
 
@@ -733,116 +803,116 @@ yyreduce:
   switch (yyn) {
 
 case 1:
-#line 85 "filt_parser.y"
+#line 111 "./filt_parser.y"
 {InstallFilter(yyvsp[-1].pf);;
     break;}
 case 2:
-#line 90 "filt_parser.y"
+#line 116 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_AND,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 3:
-#line 92 "filt_parser.y"
+#line 118 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_OR,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 4:
-#line 94 "filt_parser.y"
+#line 120 "./filt_parser.y"
 { yyval.pf = MakeUnaryNode(OP_NOT,yyvsp[0].pf); ;
     break;}
 case 5:
-#line 96 "filt_parser.y"
+#line 122 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(yyvsp[-1].op,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 6:
-#line 98 "filt_parser.y"
+#line 124 "./filt_parser.y"
 { yyval.pf = yyvsp[0].pf; ;
     break;}
 case 7:
-#line 104 "filt_parser.y"
+#line 130 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_PLUS,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 8:
-#line 106 "filt_parser.y"
+#line 132 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_MINUS,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 9:
-#line 108 "filt_parser.y"
+#line 134 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_TIMES,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 10:
-#line 110 "filt_parser.y"
+#line 136 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_DIVIDE,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 11:
-#line 112 "filt_parser.y"
+#line 138 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_MOD,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 12:
-#line 114 "filt_parser.y"
+#line 140 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_BAND,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 13:
-#line 116 "filt_parser.y"
+#line 142 "./filt_parser.y"
 { yyval.pf = MakeBinaryNode(OP_BOR,yyvsp[-2].pf,yyvsp[0].pf);;
     break;}
 case 14:
-#line 118 "filt_parser.y"
+#line 144 "./filt_parser.y"
 { yyval.pf = yyvsp[-1].pf; ;
     break;}
 case 15:
-#line 120 "filt_parser.y"
+#line 146 "./filt_parser.y"
 { yyval.pf = yyvsp[0].pf; ;
     break;}
 case 16:
-#line 125 "filt_parser.y"
+#line 151 "./filt_parser.y"
 { yyval.pf = MakeVarNode(yyvsp[0].string); ;
     break;}
 case 17:
-#line 127 "filt_parser.y"
+#line 153 "./filt_parser.y"
 { yyval.pf = MakeSignedConstNode(yyvsp[0].signed_long); ;
     break;}
 case 18:
-#line 129 "filt_parser.y"
+#line 155 "./filt_parser.y"
 { yyval.pf = MakeUnsignedConstNode(yyvsp[0].unsigned_long); ;
     break;}
 case 19:
-#line 131 "filt_parser.y"
+#line 157 "./filt_parser.y"
 { yyval.pf = MakeStringConstNode(yyvsp[0].string); ;
     break;}
 case 20:
-#line 133 "filt_parser.y"
+#line 159 "./filt_parser.y"
 { yyval.pf = MakeBoolConstNode(yyvsp[0].bool); ;
     break;}
 case 21:
-#line 136 "filt_parser.y"
+#line 162 "./filt_parser.y"
 { yyval.pf = MakeIPaddrConstNode(yyvsp[0].pipaddr); ;
     break;}
 case 22:
-#line 141 "filt_parser.y"
+#line 167 "./filt_parser.y"
 { yyval.op = OP_GREATER;;
     break;}
 case 23:
-#line 143 "filt_parser.y"
+#line 169 "./filt_parser.y"
 { yyval.op = OP_GREATER_EQ;;
     break;}
 case 24:
-#line 145 "filt_parser.y"
+#line 171 "./filt_parser.y"
 { yyval.op = OP_LESS;;
     break;}
 case 25:
-#line 147 "filt_parser.y"
+#line 173 "./filt_parser.y"
 { yyval.op = OP_LESS_EQ;;
     break;}
 case 26:
-#line 149 "filt_parser.y"
+#line 175 "./filt_parser.y"
 { yyval.op = OP_EQUAL;;
     break;}
 case 27:
-#line 151 "filt_parser.y"
+#line 177 "./filt_parser.y"
 { yyval.op = OP_NEQUAL;;
     break;}
 }
    /* the action file gets copied in in place of this dollarsign */
-#line 498 "/usr/local/gnu/share/bison.simple"
+#line 543 "/usr/share/bison.simple"
 
   yyvsp -= yylen;
   yyssp -= yylen;
@@ -1037,8 +1107,32 @@ yyerrhandle:
 
   yystate = yyn;
   goto yynewstate;
+
+ yyacceptlab:
+  /* YYACCEPT comes here.  */
+  if (yyfree_stacks)
+    {
+      free (yyss);
+      free (yyvs);
+#ifdef YYLSP_NEEDED
+      free (yyls);
+#endif
+    }
+  return 0;
+
+ yyabortlab:
+  /* YYABORT comes here.  */
+  if (yyfree_stacks)
+    {
+      free (yyss);
+      free (yyvs);
+#ifdef YYLSP_NEEDED
+      free (yyls);
+#endif
+    }
+  return 1;
 }
-#line 153 "filt_parser.y"
+#line 179 "./filt_parser.y"
 
 
 void

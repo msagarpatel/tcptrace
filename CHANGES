@@ -324,3 +324,167 @@
   fixed bug (probably introduced in 5.2.0) that kept -B from working
   fixed bug in snoop-format code that caused it to fail if it saw a
     non-IP packet
+5.2.2 - Mon Sep 27, 1999
+  bug fix from Jamshid Majdavi (and Kevin Lahey), SYN-ACKs containing window
+    scaling were getting scaled (and shouldn't be).
+5.2.3 - Interal changes and enhancements
+5.2.4 - Tue Apr 11, 2000
+  bug fix by Priya - we were detecting rexmitted bytes in segments in error in
+   some cases
+  fixed bug in IPv6 header processing reported by Takayoshi Ohnishi,
+    IPPROTO_ICMPV6 was causing infinite loop
+5.2.6 - Thu Jul  6, 2000
+  fixed bug in TCP checksum code, it was always saying CORRECT
+6.0.0a - preparing for alpha release of version 6
+6.0.1a - added support for atmsnoop output format in snoop.c
+6.0.1a2 - changed all of the DLT_ constants in tcpdump.[ch] to PCAP_DLT_
+   with the same numbers to avoid OSs that are renumbering them.
+====
+Note:
+  Wed Jun  6, 2001
+  We've switched to CVS for everything and there's a bunch of us working on
+  the code, so this file might not get updated the way that it should.  We'll
+  try to make the CVS logs visible in some fashion...
+====
+6.0.1a3 - added format characters to several options, as an extension of a
+   suggestion by Brian Utterback:
+   
+  --output_dir="STR"     directory where all output files are placed (default: '<NULL>')
+  --output_prefix="STR"  prefix all output files with this string (default: '<NULL>')
+  --xplot_title_prefix="STR" prefix to place in the titles of all xplot files (default: '<NULL>')
+
+  These options (which are handy in .tcptracerc for example), let you include
+  the format characters:
+
+   %f	basename of the current input file
+   %d	execution date, standard unix output, spaces ==> underscores
+   %t	execution time & date, standard unix output, spaces ==> underscores
+   %D	execution date, format "1-14-1963"
+
+  others could be added, but that's the only stuff I could think of for now.
+
+6.0.0b4- Saturday, 6 Oct 2001
+
+Added options :
+	--xplot_all_files and --xplot_args. 
+		--xplot_all_files calls the xplot program to display all the
+        generated graphs automatically .
+		--xplot_args can be passed an argument as in
+		--xplot_args=-1
+		to pass arguments to the xplot program when calling
+		it to display the graphs.
+
+Added support for zero window probe packets and urgent data packets.
+tcptrace -l output shows four new fields 
+zwnd probe pkts, zwnd probe bytes, urgent data pkts and urgent data
+bytes.
+
+Fixed all sprintf's in the code to snprintf's to thwart any 
+buffer overflow attacks.
+
+Changed functionality for window scaled connections so that
+the output of "min win adv" does not print the minimum window
+as advertised in SYN packets as SYN packets cannot be scaled 
+themselves.
+
+Completely revamped the http module with code sent by Bruce Mah.
+
+Added code to verify TCP and UDP checksums in IPv6 packets.
+However, code has not been tested thoroughly yet.
+
+6.0.1 - Mon Dec  3, 2001
+
+This is the version we'll release
+
+Also, added support with --print_seq_zero for printing sequence numbers
+  as relative to the SYN rather than absolute.  NOTE: this only works for
+  "-P" which uses connection records, but NOT for "-p" (which doesn't)
+  Also fixed the SACK-printing code to print in decimal if requested.
+
+Updated the manual page and made the necessary change to Makefile.in so
+that the manual page gets installed when tcptrace is installed.
+
+Fixed a bug with with the statistics for average window advertisement.
+Average was showing more than max.
+
+Fixed a bug with ACK sequence comparisons in the HTTP module. Many thanks to
+Daikichi Osuga for pointing out the error.
+
+Fixed a divide-by-zero error in PlotHist() in mod_rttgraph.c.
+
+Matt Muggeridge has been very kind in providing detailed information regarding
+porting tcptrace to OpenVMS. Please read the new file README.OpenVMS if you
+are interested in running tcptrace on OpenVMS.
+
+Changes made to code in order to be able to compile tcptrace under cygwin on
+Windows. Now works on windows too. Does not support reading compressed dump
+files directly though.
+
+The ns code was modified by Angelos Stavrou to read in the more detailed
+output from the extra headers in the ns FullTcp.
+
+Fixed a bug with the host letters. The function HostLetter was skipping host
+names after y, z ... jumping to ba, bb, ... instead of aa, ab ...
+
+6.2.0 - Stable - Fri Jul 26, 2002
+This is the version we'll release
+
+6.2.1 - Fri Aug 09, 2002
+enhance fulltcp file reading from r.schramp@kpn.com
+
+6.2.2 - Fri Aug 30, 2002
+added vlan support to snoop for Tysko.  Need to add support in other
+formats too, but I don't have a packet dump to test against yet - sdo
+
+6.2.3 - Wed Sep 18, 2002
+bugfix: For FIN segments with data only FIN was getting plotted and not the
+	data. Now data gets plotted with the default color and then one byte
+	is plotted with the synfin color. For no data, only one byte of FIN
+	is plotted with the synfin color.
+
+6.2.4 - Wed Sep 18, 2002
+bugfix: RST_IN relative offset was being calculated using the incorrect
+        sequence space.
+	
+        trace.c:1894
+		
+        plotter_text(to_tsgpl,
+                     current_time, SeqRep(thisdir,plot_at),
+                     "a", "RST_IN");
+								  
+
+	changed to:
+
+        plotter_text(to_tsgpl,
+	             current_time, SeqRep(otherdir,plot_at),
+	             "a", "RST_IN");
+
+6.2.5 - Mon Nov 11, 2002
+bugfix: Negative sequence numbers were being printed by function
+	PrintSeqRep() for the packet print '-p' / '-P' switches. Changed the
+	print format from %d to %u. 
+
+6.2.6 - Thu Nov 14, 2002
+bugfix: '-c' option - ignore non-complete connections was working only for
+	long output. Fixed it to work for brief output too.
+
+Release 6.4.0
+=============
+Bugfix made to fix misbehavior due to FILE synchronization issues
+found when tcptrace exits with "PCAP error - truncated file" when asked to
+read real-time network packets from STDIN - Mani.
+
+Patches added to process dumpfiles with 802.11 wireless headers for the
+Prism2 chipset. Courtesy - Brandon Eisenmann.
+
+Added new extended option "--nonreal_live_conn_interval" option to let the
+user set the duration to timeout live connections, in non real-time mode 
+- Ramani.
+
+Merged from development tree:
+
+Added the options --oUDP, --iUDP, --oTCP, --iTCP to filter out TCP
+and UDP connections - Mani
+
+Added options --csv, --tsv, --sv=<SP> for comma/tab/<SP>-separated values to be
+printed with the long output - Avinash
