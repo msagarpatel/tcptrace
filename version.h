@@ -52,14 +52,14 @@
  *		http://www.tcptrace.org/
  */
 static char const rcsid_version[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/version.h,v 5.48 2003/04/03 23:38:48 mramadas Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/version.h,v 5.50 2003/05/03 20:50:44 jkhasgiw Exp $";
 
 
 /* source code version information */
 #define VERSION_MAJOR	"6"
 #define VERSION_MINOR	"4"
-#define VERSION_BUGFIX	"0"
-#define VERSION_DATE	"Thu Apr 3, 2003"
+#define VERSION_BUGFIX	"2"
+#define VERSION_DATE	"Sat May 3, 2003"
 
 #define VERSION_NUM   VERSION_MAJOR "." VERSION_MINOR "." VERSION_BUGFIX
 

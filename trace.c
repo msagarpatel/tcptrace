@@ -54,7 +54,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/trace.c,v 5.56 2003/04/03 23:38:48 mramadas Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/trace.c,v 5.57 2003/05/03 20:45:52 jkhasgiw Exp $";
 
 
 #include "tcptrace.h"
@@ -1576,7 +1576,7 @@ dotrace(
 
     /* do rtt stats */
     if (ACK_SET(ptcp)) {
-	ack_type = ack_in(otherdir,th_ack,tcp_data_length);
+	ack_type = ack_in(otherdir,th_ack,tcp_data_length,eff_win);
 
 	if ( (th_ack == (otherdir->syn+1)) &&
 		 (otherdir->syn_count == 1) )

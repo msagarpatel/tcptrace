@@ -52,7 +52,7 @@
  *		http://www.tcptrace.org/
  */
 static char const rcsid_tcptrace[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.h,v 5.60 2003/04/03 23:38:48 mramadas Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/tcptrace.h,v 5.61 2003/05/03 20:45:51 jkhasgiw Exp $";
 
 
 #include <stdio.h>
@@ -679,6 +679,7 @@ extern Bool run_continuously;
 extern Bool conn_num_threshold;
 extern Bool xplot_all_files;
 extern Bool ns_hdrs;
+extern Bool dup_ack_handling;
 extern Bool csv;
 extern Bool tsv;
 extern u_long remove_live_conn_interval;
@@ -793,7 +794,7 @@ char *EndpointName(ipaddr,portnum);
 PLOTTER new_plotter(tcb *plast, char *filename, char *title,
 		    char *xlabel, char *ylabel, char *suffix);
 int rexmit(tcb *, seqnum, seglen, Bool *);
-enum t_ack ack_in(tcb *, seqnum, unsigned tcp_data_length);
+enum t_ack ack_in(tcb *, seqnum, unsigned tcp_data_length, u_long eff_win);
 void DoThru(tcb *ptcb, int nbytes);
 struct mfile *Mfopen(char *fname, char *mode);
 void Minit(void);

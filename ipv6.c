@@ -53,7 +53,7 @@
 static char const copyright[] =
     "@(#)Copyright (c) 2001 -- Ohio University.\n";
 static char const rcsid[] =
-    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.c,v 5.19 2001/12/03 15:58:49 sdo Exp $";
+    "@(#)$Header: /usr/local/cvs/tcptrace/ipv6.c,v 5.20 2003/04/26 23:14:44 mramadas Exp $";
 
 
 #include "tcptrace.h"
@@ -255,7 +255,7 @@ findheader(
 		  
 	      pheader = (struct ipv6_ext *)
 		  ((char *)pheader + 8 + (pheader->ip6ext_len)*8);
-
+	      break;
 	    /* non-tcp protocols, so we're finished. */
 	  case IPPROTO_NONE:
 	  case IPPROTO_ICMPV6:
