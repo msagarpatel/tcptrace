@@ -291,6 +291,10 @@ install: tcptrace install-man
 install-man: 
 	$(INSTALL) -m 444 -o ${USER} tcptrace.man $(MANDIR)/man1/tcptrace.1
 
+#
+# just a quick uninstallation rule
+uninstall:
+	$(RM) ${BINDIR}/tcptrace $(MANDIR)/man1/tcptrace.1
 
 
 #
