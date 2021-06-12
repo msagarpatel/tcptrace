@@ -1,0 +1,25 @@
+# object files
+*.o
+tcptrace
+versnum
+
+# config logs
+config.log
+config.status
+
+# generated files
+Makefile
+filt_parser.c
+filt_parser.h
+filt_parser.output
+filt_scanner.c
+
+# backups and swapfiles
+*.swp
+*~
+
+# macOS Finder metadata
+.DS_Store
+
+# IDE files
+.vscode/
