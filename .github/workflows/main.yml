@@ -22,8 +22,5 @@ jobs:
       - name: Build
         run: ./configure && make
 
-      - name: Install
-        run: make install
-
       - name: Test
-        run: tcptrace
+        run: ./tcptrace
