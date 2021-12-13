@@ -5,8 +5,8 @@ This project takes the most recent version of tcptrace by Shawn Ostermann
 installed on macOS. The original source of tcptrace was downloaded from
 [tcptrace.org](tcptrace.org) via
 [archive.org](https://web.archive.org/web/20200806203343/http://www.tcptrace.org/download.shtml).
-Only the most minimal changes required install, and uninstall tcptrace on macOS
-have been made. No substantial features have been added, nor are any features
+Only the most minimal changes required build, install, and uninstall tcptrace on macOS
+and Ubuntu have been made. No substantial features have been added, nor are any features
 planned.
 
 Since tcptrace.org has a history of going offline, and there is no official VCS
@@ -21,6 +21,10 @@ tcptrace's README is [README](README).
 Surprisingly, no changes were necessary to get tcptrace to build on a recent
 version of macOS, but changes were made to fix `make install`. There are a lot
 of compiler warnings though.
+
+A small change was neccessary to fix the Ubuntu build. Thankfully, the Debian
+maintainers already fixed this
+([`f36b1567a5`](https://github.com/msagarpatel/tcptrace/commit/f36b1567a5691d4c32489ab8493d8d4faaad3935)).
 
 Simply run
 ```shell
